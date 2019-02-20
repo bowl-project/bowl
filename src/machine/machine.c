@@ -355,7 +355,7 @@ void machine_show(Machine machine) {
 static bool machine_is_escaped(char *string, word length, word position) {
     bool escaped = false;
 
-    while (--position >= 0 && position < length && string[position] == '\\') {
+    while (--position < length && string[position] == '\\') {
         escaped = !escaped;
     }
 
@@ -437,7 +437,7 @@ void machine_tokens(Machine machine) {
 
     machine->$1 = NULL;
 
-    while (--position >= 0 && position < length) {
+    while (--position < length) {
         const char current = machine->$0->string.value[position];
 
         if (is_whitespace(current)) {

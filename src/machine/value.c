@@ -79,6 +79,9 @@ static void value_collect_garbage(void) {
                     value->map.buckets[i] = value_relocate(value->map.buckets[i]);
                 }
                 break;
+            default:
+                /* not a compound type */
+                break;
         }
 
         scan += bytes;
