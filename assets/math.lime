@@ -1,0 +1,14 @@
+
+define + add ;
+define - sub ;
+define * mul ;
+define / div ;
+define % rem ;
+
+define decrement 1 sub ;
+define -- decrement ;
+define increment 1 add ;
+define ++ increment ;
+
+define factorial dup 0 equals "drop 1" tokens "dup decrement factorial mul" tokens rot if ;
+define ! factorial ;

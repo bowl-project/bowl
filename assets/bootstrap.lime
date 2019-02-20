@@ -1,0 +1,117 @@
+invoke rot
+quote
+"invoke swap 13 split swap drop dup head swap tail rot rot prepend continue" tokens reverse
+put
+rot 13 split swap drop rot
+continue
+
+invoke rot
+get-dictionary
+"invoke swap 14 split swap drop swap rot dup rot swap prepend rot swap continue" tokens reverse
+put
+rot 13 split swap drop rot
+continue
+
+invoke rot
+set-dictionary
+"invoke swap 15 split swap drop rot drop swap 1 split swap head rot rot continue" tokens reverse
+put
+rot 13 split swap drop rot
+continue
+
+get-dictionary
+println
+"print \"\n\" print" tokens reverse
+put
+set-dictionary
+
+get-dictionary
+apply
+"invoke swap 15 split swap drop swap dup head swap tail rot rot prepend swap continue" tokens reverse
+put
+set-dictionary
+
+get-dictionary
+if
+"invoke swap 25 split swap drop swap 3 split swap dup head 1 equals swap tail swap split swap drop head rot swap concatenate swap continue" tokens reverse
+put
+set-dictionary
+
+get-dictionary
+parse-lookup-table
+nil empty-map 
+quote define quote parse-define put
+quote (- quote parse-comment put
+quote [ quote parse-list put
+prepend put
+set-dictionary
+
+get-dictionary
+parse
+"dup head parse-lookup-table swap quote parse-next get-or-else apply" tokens reverse
+put
+set-dictionary
+
+get-dictionary
+parse-next
+"\"parse-next\" println split 1 swap" tokens reverse
+put
+set-dictionary
+
+get-dictionary
+parse-list-accumulate
+"swap dup head quote ] equals if" tokens
+"\"found closing bracket\" println tail swap reverse" tokens prepend
+"\"found additional list element\" println parse rot swap prepend parse-list-accumulate" tokens prepend
+"" tokens concatenate
+
+dup show println
+
+reverse
+put
+set-dictionary
+
+get-dictionary
+parse-list
+"\"parse-list\" println tail nil parse-list-accumulate" tokens reverse
+put
+set-dictionary
+
+get-dictionary
+parse-define
+"\"parse-define\" println" tokens reverse
+put
+set-dictionary
+
+get-dictionary
+parse-comment
+"\"parse-comment\" println" tokens reverse
+put
+set-dictionary
+
+
+
+"[ 1 2 3 ]" tokens parse show println
+
+0 exit
+
+
+get-dictionary
+cd
+"invoke swap 17 split swap drop dup head rot swap prepend swap tail quote change-directory prepend swap continue" tokens reverse
+put
+set-dictionary
+
+get-dictionary
+get-datastack
+"invoke swap 9 split swap drop swap dup prepend continue" tokens reverse
+put
+set-dictionary
+
+get-dictionary
+main
+"get-directory print \" > \" print invoke swap 10 split swap drop input tokens concatenate swap continue get-datastack show println main" tokens reverse
+put
+set-dictionary
+
+main
