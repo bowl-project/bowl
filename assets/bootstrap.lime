@@ -33,7 +33,19 @@ set-dictionary
 
 get-dictionary
 if
-"invoke swap 25 split swap drop swap 3 split swap dup head 1 equals swap tail swap split swap drop head rot swap concatenate swap continue" tokens reverse
+"invoke swap 24 split swap drop swap 3 split swap dup head 1 equals swap tail swap split swap drop head rot concatenate swap continue" tokens reverse
+put
+set-dictionary
+
+get-dictionary
+get-datastack
+"invoke swap 9 split swap drop swap dup prepend continue" tokens reverse
+put
+set-dictionary
+
+get-dictionary
+print-datastack
+"get-datastack show println" tokens reverse
 put
 set-dictionary
 
@@ -41,7 +53,7 @@ get-dictionary
 parse-lookup-table
 nil empty-map 
 quote define quote parse-define put
-quote (- quote parse-comment put
+quote (- quote parse-comment-skip put
 quote [ quote parse-list put
 prepend put
 set-dictionary
@@ -54,64 +66,143 @@ set-dictionary
 
 get-dictionary
 parse-next
-"\"parse-next\" println split 1 swap" tokens reverse
+"1 split swap head" tokens reverse
 put
 set-dictionary
 
 get-dictionary
 parse-list-accumulate
-"swap dup head quote ] equals if" tokens
-"\"found closing bracket\" println tail swap reverse" tokens prepend
-"\"found additional list element\" println parse rot swap prepend parse-list-accumulate" tokens prepend
-"" tokens concatenate
-
-dup show println
-
+"swap parse-comment-optional dup head quote ] equals" tokens
+"rot if" tokens 
+"parse rot swap prepend parse-list-accumulate" tokens prepend
+"tail swap reverse" tokens prepend
+concatenate
 reverse
 put
 set-dictionary
 
 get-dictionary
 parse-list
-"\"parse-list\" println tail nil parse-list-accumulate" tokens reverse
+"tail nil parse-list-accumulate" tokens reverse
 put
 set-dictionary
 
 get-dictionary
+[
+"invoke swap 12 split swap drop nil prepend parse-list rot swap prepend continue" tokens reverse
+put
+set-dictionary
+
+get-dictionary
+parse-define-until-semicolon
+"swap parse-comment-optional dup head quote ; equals" tokens
+"rot if" tokens
+"parse rot swap prepend parse-define-until-semicolon" tokens prepend
+"tail swap reverse" tokens prepend
+concatenate
+reverse
+put
+set-dictionary
+
+
+get-dictionary
 parse-define
-"\"parse-define\" println" tokens reverse
+"tail nil parse-define-until-semicolon 1 split swap nil quote get-dictionary prepend quote quote prepend swap head prepend swap reverse prepend quote put prepend quote set-dictionary prepend reverse" tokens reverse
+put
+set-dictionary
+
+get-dictionary
+define
+"invoke swap 12 split swap drop nil prepend parse-define swap concatenate swap continue" tokens reverse 
+put
+set-dictionary
+
+get-dictionary
+parse-comment-until-end
+"dup head quote (- equals" tokens
+"rot if" tokens
+"dup head quote -) equals" tokens 
+"rot if" tokens
+"tail parse-comment-until-end" tokens prepend
+"tail" tokens prepend
+concatenate
+prepend
+"parse-comment parse-comment-until-end" tokens prepend
+concatenate
+reverse
 put
 set-dictionary
 
 get-dictionary
 parse-comment
-"\"parse-comment\" println" tokens reverse
-put
-set-dictionary
-
-
-
-"[ 1 2 3 ]" tokens parse show println
-
-0 exit
-
-
-get-dictionary
-cd
-"invoke swap 17 split swap drop dup head rot swap prepend swap tail quote change-directory prepend swap continue" tokens reverse
+"tail parse-comment-until-end" tokens reverse
 put
 set-dictionary
 
 get-dictionary
-get-datastack
-"invoke swap 9 split swap drop swap dup prepend continue" tokens reverse
+parse-comment-skip
+"parse-comment parse" tokens reverse
 put
 set-dictionary
 
 get-dictionary
-main
-"get-directory print \" > \" print invoke swap 10 split swap drop input tokens concatenate swap continue get-datastack show println main" tokens reverse
+parse-comment-optional
+"dup head quote (- equals" tokens
+"rot if" tokens
+"" tokens prepend 
+"parse-comment" tokens prepend
+concatenate
+reverse
 put
 set-dictionary
+
+get-dictionary
+(-
+"invoke swap 11 split swap drop quote (- prepend parse-comment swap continue" tokens reverse
+put
+set-dictionary
+
+(- standard library for lime -)
+
+(- Drops the first n elements of the list -)
+define drop-n (- ... xs n -> ... xs -)
+    split swap drop
+;
+
+(- Gets the current callstack (after this command) -)
+define get-callstack (- ... -> ... callstack -)
+    invoke swap 8 drop-n dup rot swap prepend continue
+;
+
+(- Sets the callstack to specified value -)
+define set-callstack (- ... callstack -> ... -)
+    invoke swap drop 1 split swap head swap continue
+;
+
+(- Calls the program at the top of the datastack -)
+define call (- ... program -> ... -)
+    get-callstack 4 drop-n concatenate set-callstack
+;
+
+(- Sets the datastack to the provided value -)
+define set-datastack (- ... datastack -> datastack -)
+    invoke swap 6 drop-n swap head continue
+;
+
+(- Clears the datastack -)
+define clear (- ... ->  -)
+    nil set-datastack
+;
+
+define main
+    (- --- print prompt --- -)
+    get-directory print
+    "$ " print 
+    (- --- fetch, parse and call next line --- -)
+    input tokens call
+    (- --- print datastack and call recursively --- -)
+    print-datastack
+    main
+;
 
 main

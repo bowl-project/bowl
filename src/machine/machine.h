@@ -48,6 +48,8 @@ void machine_split(Machine machine);
 
 void machine_nil(Machine machine);
 
+void machine_length(Machine machine);
+
 void machine_print(Machine machine);
 
 void machine_concatenate(Machine machine);

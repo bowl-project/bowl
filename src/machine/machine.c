@@ -57,6 +57,7 @@ Machine machine_create(void) {
     machine_enter_native(result, "tail", machine_tail);
     machine_enter_native(result, "split", machine_split);
     machine_enter_native(result, "nil", machine_nil);
+    machine_enter_native(result, "length", machine_length);
     machine_enter_native(result, "concatenate", machine_concatenate);
     machine_enter_native(result, "prepend", machine_prepend);
     machine_enter_native(result, "put", machine_put);
@@ -106,12 +107,12 @@ void machine_step(Machine machine) {
     }
 
     #if DEBUG
-        printf("callstack: ");
+        printf("CALLSTACK: ");
         value_dump(stdout, machine->callstack);
         printf("\n");
-        printf("datastack: ");
+        printf("DATASTACK: ");
         value_dump(stdout, machine->datastack);
-        printf("\n");
+        printf("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
     #endif
 
     machine->$0 = machine->callstack->list.head;
@@ -140,12 +141,12 @@ void machine_step(Machine machine) {
     }
 
     #if DEBUG
-        printf("callstack: ");
+        printf("CALLSTACK: ");
         value_dump(stdout, machine->callstack);
         printf("\n");
-        printf("datastack: ");
+        printf("DATASTACK: ");
         value_dump(stdout, machine->datastack);
-        printf("\n\n");
+        printf("\n\n\n");
     #endif
 }
 
@@ -519,7 +520,7 @@ void machine_print(Machine machine) {
     machine->datastack = machine->datastack->list.tail;
 
     if (machine->$0 == NULL || machine->$0->type != StringValue) {
-        fatal("illegal argument for function 'print'");
+        fatal("illegal argument for function 'print' (%s, type := %d)", value_to_string(machine->$0), machine->$0 == NULL ? ListValue : machine->$0->type);
     }
 
     for (word i = 0, end = machine->$0->string.length; i < end; ++i) {
@@ -619,6 +620,24 @@ void machine_nil(Machine machine) {
     machine->datastack = value_list(NULL, machine->datastack);
 }
 
+void machine_length(Machine machine) {
+    if (machine->datastack == NULL) {
+        fatal("empty datastack");
+    } else if (machine->datastack->type != ListValue) {
+        fatal("illegal datastack");
+    }
+
+    machine->$0 = machine->datastack->list.head;
+    machine->datastack = machine->datastack->list.tail;
+
+    if (machine->$0 == NULL) {
+        machine->datastack = value_list(value_number(0), machine->datastack);
+    } else {
+        machine->datastack = value_list(value_number(machine->$0->list.length), machine->datastack);
+        machine->$0 = NULL;
+    }
+}
+
 void machine_concatenate(Machine machine) {
     if (machine->datastack == NULL) {
         fatal("empty datastack");
@@ -628,9 +647,9 @@ void machine_concatenate(Machine machine) {
         fatal("'concatenate' requires two arguments");
     }
     
-    machine->$0 = machine->datastack->list.head;
-    machine->datastack = machine->datastack->list.tail;
     machine->$1 = machine->datastack->list.head;
+    machine->datastack = machine->datastack->list.tail;
+    machine->$0 = machine->datastack->list.head;
     machine->datastack = machine->datastack->list.tail;
 
     machine->$2 = NULL;
