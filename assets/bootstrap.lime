@@ -94,10 +94,10 @@ put
 set-dictionary
 
 get-dictionary
-parse-define-until-semicolon
+parse-until-semicolon
 "swap parse-comment-optional dup head quote ; equals" tokens
 "rot if" tokens
-"parse rot swap prepend parse-define-until-semicolon" tokens prepend
+"parse rot swap prepend parse-until-semicolon" tokens prepend
 "tail swap reverse" tokens prepend
 concatenate
 reverse
@@ -107,7 +107,7 @@ set-dictionary
 
 get-dictionary
 parse-define
-"tail nil parse-define-until-semicolon 1 split swap nil quote get-dictionary prepend quote quote prepend swap head prepend swap reverse prepend quote put prepend quote set-dictionary prepend reverse" tokens reverse
+"tail nil parse-until-semicolon 1 split swap nil quote get-dictionary prepend quote quote prepend swap head prepend swap reverse prepend quote put prepend quote set-dictionary prepend reverse" tokens reverse
 put
 set-dictionary
 
@@ -192,6 +192,13 @@ define set-datastack (- ... datastack -> datastack -)
 (- Clears the datastack -)
 define clear (- ... ->  -)
     nil set-datastack
+;
+
+define on-unknown-word
+    dup show nil swap prepend "-v" prepend "command" execute "" equals
+    [ (- do nothing -) ]
+    [ show get-callstack 8 drop-n nil parse-until-semicolon rot execute swap set-callstack ]
+    rot if
 ;
 
 define main

@@ -118,31 +118,44 @@ void machine_step(Machine machine) {
     machine->$0 = machine->callstack->list.head;
     machine->callstack = machine->callstack->list.tail;
 
-    machine->$1 = value_map_get_or_else(machine->dictionary, machine->$0, value_marker);
+    if (machine->$0 != NULL && machine->$0->type == SymbolValue) {
+        machine->$1 = value_map_get_or_else(machine->dictionary, machine->$0, value_marker);
 
-    if (machine->$1 == value_marker) {
-        machine->$1 = NULL;
+        if (machine->$1 == value_marker) {
+            machine->$1 = NULL;
 
+            machine->datastack = value_list(machine->$0, machine->datastack);
+            
+            machine->$0 = value_symbol_from_string("on-unknown-word");
+            machine->$1 = value_map_get_or_else(machine->dictionary, machine->$0, value_marker);
+
+            if (machine->$1 != value_marker) {
+                machine->callstack = value_list(machine->$0, machine->callstack);
+            }
+            
+            machine->$1 = NULL;
+            machine->$0 = NULL;
+        } else if (machine->$1 == NULL || machine->$1->type == ListValue) {
+            /* expand word */
+            while (machine->$1 != NULL) {
+                machine->callstack = value_list(machine->$1->list.head, machine->callstack);
+                machine->$1 = machine->$1->list.tail;
+            }
+        } else if (machine->$1->type == NativeValue) {
+            void (*function)(void *) = machine->$1->native.function;
+            machine->$0 = machine->$1 = NULL;
+            function(machine);
+        } else {
+            fatal("illegal dictionary entry");
+        }
+    } else {
         machine->datastack = value_list(machine->$0, machine->datastack);
         machine->$0 = NULL;
-
-    } else if (machine->$1->type == ListValue) {
-        /* expand word */
-        while (machine->$1 != NULL) {
-            machine->callstack = value_list(machine->$1->list.head, machine->callstack);
-            machine->$1 = machine->$1->list.tail;
-        }
-    } else if (machine->$1->type == NativeValue) {
-        void (*function)(void *) = machine->$1->native.function;
-        machine->$0 = machine->$1 = NULL;
-        function(machine);
-    } else {
-        fatal("illegal dictionary entry");
     }
 
     #if DEBUG
-        printf("CALLSTACK: ");
         value_dump(stdout, machine->callstack);
+        printf("CALLSTACK: ");
         printf("\n");
         printf("DATASTACK: ");
         value_dump(stdout, machine->datastack);
