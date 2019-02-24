@@ -40,6 +40,7 @@ Machine machine_create(void) {
     /* enter standard words */
     machine_enter_native(result, "run", machine_run);
     machine_enter_native(result, "step", machine_step);
+    machine_enter_native(result, "quote", machine_quote);
     machine_enter_native(result, "dup", machine_dup);
     machine_enter_native(result, "exit", machine_exit);
     machine_enter_native(result, "swap", machine_swap);
@@ -70,6 +71,15 @@ Machine machine_create(void) {
     machine_enter_native(result, "mul", machine_mul);
     machine_enter_native(result, "div", machine_div);
     machine_enter_native(result, "rem", machine_rem);
+    machine_enter_native(result, "if", machine_if);
+    machine_enter_native(result, "and", machine_and);
+    machine_enter_native(result, "or", machine_or);
+    machine_enter_native(result, "xor", machine_xor);
+    machine_enter_native(result, "not", machine_not);
+    machine_enter_native(result, ">", machine_greater_than);
+    machine_enter_native(result, "<", machine_less_than);
+    machine_enter_native(result, ">=", machine_greater_equal);
+    machine_enter_native(result, "<=", machine_less_equal);
     machine_enter_native(result, "library", machine_library);
     machine_enter_native(result, "change-directory", machine_change_directory);
     machine_enter_native(result, "get-directory", machine_get_directory);
@@ -112,7 +122,7 @@ void machine_step(Machine machine) {
         printf("\n");
         printf("DATASTACK: ");
         value_dump(stdout, machine->datastack);
-        printf("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+        printf("\n\n");
     #endif
 
     machine->$0 = machine->callstack->list.head;
@@ -152,15 +162,17 @@ void machine_step(Machine machine) {
         machine->datastack = value_list(machine->$0, machine->datastack);
         machine->$0 = NULL;
     }
+}
 
-    #if DEBUG
-        value_dump(stdout, machine->callstack);
-        printf("CALLSTACK: ");
-        printf("\n");
-        printf("DATASTACK: ");
-        value_dump(stdout, machine->datastack);
-        printf("\n\n\n");
-    #endif
+void machine_quote(Machine machine) {
+    if (machine->callstack == NULL) {
+        fatal("'quote' on empty callstack");
+    } else if (machine->callstack->type != ListValue) {
+        fatal("illegal callstack");
+    }
+
+    machine->datastack = value_list(machine->callstack->list.head, machine->datastack);
+    machine->callstack = machine->callstack->list.tail;
 }
 
 void machine_equals(Machine machine) {
@@ -177,9 +189,9 @@ void machine_equals(Machine machine) {
     machine->$1 = machine->datastack->list.head;
     machine->datastack = machine->datastack->list.tail;
 
-    const word result = value_equals(machine->$0, machine->$1) ? 1 : 0;
+    const bool result = value_equals(machine->$0, machine->$1);
     machine->$0 = machine->$1 = NULL;
-    machine->$0 = value_number(result);
+    machine->$0 = value_boolean(result);
     machine->datastack = value_list(machine->$0, machine->datastack);
     machine->$0 = NULL;
 }
@@ -462,6 +474,10 @@ void machine_tokens(Machine machine) {
 
                 if (nend == machine->$0->string.value + end) {
                     machine->$2 = value_number(number);
+                } else if ((end - start) == 4 && memcmp("true", machine->$0->string.value + start, end - start) == 0) {
+                    machine->$2 = value_boolean(true);
+                } else if ((end - start) == 5 && memcmp("false", machine->$0->string.value + start, end - start) == 0) {
+                    machine->$2 = value_boolean(false);
                 } else {
                     machine->$2 = value_create(SymbolValue, (end - start) * sizeof(char));
                     machine->$2->symbol.length = end - start;
@@ -507,6 +523,10 @@ void machine_tokens(Machine machine) {
 
         if (nend == machine->$0->string.value + end) {
             machine->$2 = value_number(number);
+        } else if (end == 4 && memcmp("true", machine->$0->string.value, end) == 0) {
+            machine->$2 = value_boolean(true);
+        } else if (end == 5 && memcmp("false", machine->$0->string.value, end) == 0) {
+            machine->$2 = value_boolean(false);
         } else {
             machine->$2 = value_create(SymbolValue, end * sizeof(char));
             machine->$2->symbol.length = end;
@@ -542,11 +562,34 @@ void machine_print(Machine machine) {
 }
 
 void machine_invoke(Machine machine) {
-    machine->$0 = machine->datastack;
+    machine->$0 = machine->datastack->list.head;
+    machine->datastack = machine->datastack->list.tail;
+
+    if (machine->$0 != NULL && machine->$0->type != ListValue) {
+        fatal("illegal argument for function 'invoke'");
+    }
+
+    machine->$1 = NULL;
+    while (machine->$0 != NULL) {
+        machine->$1 = value_list(machine->$0->list.head, machine->$1);
+        machine->$0 = machine->$0->list.tail;
+    }
+
+    machine->$0 = machine->callstack;
+    while (machine->$1 != NULL) {
+        machine->callstack = value_list(machine->$1->list.head, machine->callstack);
+        machine->$1 = machine->$1->list.tail;
+    }
+
+    machine->$1 = machine->datastack;
+    
     machine->datastack = value_list(machine->dictionary, NULL);
-    machine->datastack = value_list(machine->callstack, machine->datastack);
+    
     machine->datastack = value_list(machine->$0, machine->datastack);
     machine->$0 = NULL;
+
+    machine->datastack = value_list(machine->$1, machine->datastack);
+    machine->$1 = NULL;
 }
 
 void machine_head(Machine machine) {
@@ -841,6 +884,159 @@ void machine_reverse(Machine machine) {
     machine->$1 = NULL;
 }
 
+void machine_if(Machine machine) {
+    if (machine->datastack == NULL) {
+        fatal("'if' expects three arguments");
+    } else if (machine->datastack->type != ListValue) {
+        fatal("illegal datastack");
+    }
+
+    machine->$0 = machine->datastack->list.head;
+    machine->datastack = machine->datastack->list.tail;
+
+    if (machine->$0 == NULL || machine->$0->type != BooleanValue) {
+        fatal("illegal argument for function 'if'");
+    } else if (machine->datastack == NULL) {
+        fatal("'if' expects three arguments");
+    } else if (machine->datastack->type != ListValue) {
+        fatal("illegal datastack");
+    }
+
+    machine->$1 = machine->datastack->list.head;
+    machine->datastack = machine->datastack->list.tail;
+
+    if (machine->$1 != NULL && machine->$1->type != ListValue) {
+        fatal("illegal argument for function 'if'");
+    } else if (machine->datastack == NULL) {
+        fatal("'if' expects three arguments");
+    } else if (machine->datastack->type != ListValue) {
+        fatal("illegal datastack");
+    }
+
+    machine->$2 = machine->datastack->list.head;
+    machine->datastack = machine->datastack->list.tail;
+
+    if (machine->$2 != NULL && machine->$2->type != ListValue) {
+        fatal("illegal argument for function 'if'");
+    }
+    
+    if (machine->$0->boolean.value) {
+        machine->$1 = machine->$2;
+    }
+
+    machine->$2 = NULL;
+    while (machine->$1 != NULL) {
+        machine->$2 = value_list(machine->$1->list.head, machine->$2);
+        machine->$1 = machine->$1->list.tail;
+    }
+
+    while (machine->$2 != NULL) {
+        machine->callstack = value_list(machine->$2->list.head, machine->callstack);
+        machine->$2 = machine->$2->list.tail;
+    }
+}
+
+void machine_and(Machine machine) {
+    if (machine->datastack == NULL) {
+        fatal("'and' expects two arguments");
+    } else if (machine->datastack->type != ListValue) {
+        fatal("illegal datastack");
+    }
+
+    machine->$0 = machine->datastack->list.head;
+    machine->datastack = machine->datastack->list.tail;
+
+    if (machine->$0 == NULL || machine->$0->type != BooleanValue) {
+        fatal("illegal argument for function 'and'");
+    } else if (machine->datastack == NULL) {
+        fatal("'and' expects two arguments");
+    } else if (machine->datastack->type != ListValue) {
+        fatal("illegal datastack");
+    }
+
+    machine->$1 = machine->datastack->list.head;
+    machine->datastack = machine->datastack->list.tail;
+
+    if (machine->$1 == NULL || machine->$1->type != BooleanValue) {
+        fatal("illegal argument for function 'and'");
+    }
+
+    machine->datastack = value_list(value_boolean(machine->$0->boolean.value & machine->$1->boolean.value), machine->datastack);
+}
+
+void machine_or(Machine machine) {
+    if (machine->datastack == NULL) {
+        fatal("'or' expects two arguments");
+    } else if (machine->datastack->type != ListValue) {
+        fatal("illegal datastack");
+    }
+
+    machine->$0 = machine->datastack->list.head;
+    machine->datastack = machine->datastack->list.tail;
+
+    if (machine->$0 == NULL || machine->$0->type != BooleanValue) {
+        fatal("illegal argument for function 'or'");
+    } else if (machine->datastack == NULL) {
+        fatal("'or' expects two arguments");
+    } else if (machine->datastack->type != ListValue) {
+        fatal("illegal datastack");
+    }
+
+    machine->$1 = machine->datastack->list.head;
+    machine->datastack = machine->datastack->list.tail;
+
+    if (machine->$1 == NULL || machine->$1->type != BooleanValue) {
+        fatal("illegal argument for function 'and'");
+    }
+
+    machine->datastack = value_list(value_boolean(machine->$0->boolean.value | machine->$1->boolean.value), machine->datastack);
+}
+
+void machine_xor(Machine machine) {
+    if (machine->datastack == NULL) {
+        fatal("'xor' expects two arguments");
+    } else if (machine->datastack->type != ListValue) {
+        fatal("illegal datastack");
+    }
+
+    machine->$0 = machine->datastack->list.head;
+    machine->datastack = machine->datastack->list.tail;
+
+    if (machine->$0 == NULL || machine->$0->type != BooleanValue) {
+        fatal("illegal argument for function 'xor'");
+    } else if (machine->datastack == NULL) {
+        fatal("'xor' expects two arguments");
+    } else if (machine->datastack->type != ListValue) {
+        fatal("illegal datastack");
+    }
+
+    machine->$1 = machine->datastack->list.head;
+    machine->datastack = machine->datastack->list.tail;
+
+    if (machine->$1 == NULL || machine->$1->type != BooleanValue) {
+        fatal("illegal argument for function 'and'");
+    }
+
+    machine->datastack = value_list(value_boolean(machine->$0->boolean.value ^ machine->$1->boolean.value), machine->datastack);
+}
+
+void machine_not(Machine machine) {
+    if (machine->datastack == NULL) {
+        fatal("'not' expects one argument");
+    } else if (machine->datastack->type != ListValue) {
+        fatal("illegal datastack");
+    }
+
+    machine->$0 = machine->datastack->list.head;
+    machine->datastack = machine->datastack->list.tail;
+
+    if (machine->$0 == NULL || machine->$0->type != BooleanValue) {
+        fatal("illegal argument for function 'not'");
+    }
+
+    machine->datastack = value_list(value_boolean(!machine->$0->boolean.value), machine->datastack);
+}
+
 static void machine_binary_operation(Machine machine, char *name, double (*operator)(double, double)) {
     if (machine->datastack == NULL) {
         fatal("'%s' expects two arguments", name);
@@ -862,10 +1058,55 @@ static void machine_binary_operation(Machine machine, char *name, double (*opera
         fatal("illegal argument for function '%s'", name);
     }
 
-    machine->$0 = value_number(operator(machine->$0->number.value, machine->$1->number.value));
-    machine->$1 = NULL;
-    machine->datastack = value_list(machine->$0, machine->datastack);
-    machine->$0 = NULL;
+    const double result = operator(machine->$0->number.value, machine->$1->number.value);
+    machine->$0 = machine->$1 = NULL;
+    machine->datastack = value_list(value_number(result), machine->datastack);
+}
+
+static void machine_binary_relation(Machine machine, char *name, bool (*operator)(double, double)) {
+    if (machine->datastack == NULL) {
+        fatal("'%s' expects two arguments", name);
+    } else if (machine->datastack->type != ListValue) {
+        fatal("illegal datastack");
+    } else if (machine->datastack->list.tail == NULL) {
+        fatal("'%s' expects two arguments", name);
+    }
+
+    machine->$1 = machine->datastack->list.head;
+    machine->datastack = machine->datastack->list.tail;
+
+    machine->$0 = machine->datastack->list.head;
+    machine->datastack = machine->datastack->list.tail;
+
+    if (machine->$0 == NULL || machine->$0->type != NumberValue) {
+        fatal("illegal argument for function '%s'", name);
+    } else if (machine->$1 == NULL || machine->$1->type != NumberValue) {
+        fatal("illegal argument for function '%s'", name);
+    }
+
+    const bool result = operator(machine->$0->number.value, machine->$1->number.value);
+    machine->$0 = machine->$1 = NULL;
+    machine->datastack = value_list(value_boolean(result), machine->datastack);
+}
+
+static bool machine_less_than_operator(double a, double b) { return a < b; }
+void machine_less_than(Machine machine) {
+    machine_binary_relation(machine, "<", machine_less_than_operator);
+}
+
+static bool machine_less_equal_operator(double a, double b) { return a <= b; }
+void machine_less_equal(Machine machine) {
+    machine_binary_relation(machine, "<=", machine_less_equal_operator);
+}
+
+static bool machine_greater_than_operator(double a, double b) { return a > b; }
+void machine_greater_than(Machine machine) {
+    machine_binary_relation(machine, ">", machine_greater_than_operator);
+}
+
+static bool machine_greater_equal_operator(double a, double b) { return a >= b; }
+void machine_greater_equal(Machine machine) {
+    machine_binary_relation(machine, ">=", machine_greater_equal_operator);
 }
 
 static double machine_add_operator(double a, double b) { return a + b; }

@@ -20,6 +20,8 @@ void machine_run(Machine machine);
 
 void machine_equals(Machine machine);
 
+void machine_quote(Machine machine);
+
 void machine_dup(Machine machine);
 
 void machine_exit(Machine machine);
@@ -67,6 +69,24 @@ void machine_empty_map(Machine machine);
 void machine_get_or_else(Machine machine);
 
 void machine_reverse(Machine machine);
+
+void machine_if(Machine machine);
+
+void machine_and(Machine machine);
+
+void machine_or(Machine machine);
+
+void machine_xor(Machine machine);
+
+void machine_not(Machine machine);
+
+void machine_less_than(Machine machine);
+
+void machine_less_equal(Machine machine);
+
+void machine_greater_than(Machine machine);
+
+void machine_greater_equal(Machine machine);
 
 void machine_add(Machine machine);
 

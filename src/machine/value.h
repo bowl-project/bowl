@@ -15,6 +15,8 @@ Value value_symbol(word length, char *value);
 
 Value value_number(double value);
 
+Value value_boolean(bool value);
+
 Value value_native(word length, char *value, NativeFunction function);
 
 Value value_native_from_string(char *string, NativeFunction function);

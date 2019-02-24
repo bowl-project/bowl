@@ -6,5 +6,4 @@ FLAGS=-O3 -std=c11
 build:
 	$(COMPILER) -o $(OUTPUT) $(FLAGS) $(INPUT) -lm -ldl
 	clear
-	time ./$(OUTPUT) invoke swap drop assets/bootstrap.lime show read tokens swap continue
-	
+	time ./$(OUTPUT) nil quote continue prepend quote swap prepend quote tokens prepend quote read prepend quote show prepend quote assets/bootstrap.lime prepend quote drop prepend quote swap prepend invoke

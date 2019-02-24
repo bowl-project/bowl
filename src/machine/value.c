@@ -154,6 +154,12 @@ Value value_number(double value) {
     return result;
 }
 
+Value value_boolean(bool value) {
+    const Value result = value_create(BooleanValue, 0);
+    result->boolean.value = value;
+    return result;
+}
+
 Value value_string(word length, char *value) {
     const Value result = value_create(StringValue, length * sizeof(char));
     result->string.length = length;
@@ -298,6 +304,10 @@ word value_hash(Value value) {
                 value->hash += *((word *) (&value->number.value)) * 31;
                 break;
 
+            case BooleanValue:
+                value->hash = value->boolean.value ? 7 : 31;
+                break;
+
             case StringValue:
                 for (word i = 0, end = value->string.length; i < end; ++i) {
                     value->hash += pow(value->string.value[i] * 31, end - (i + 1));
@@ -350,6 +360,9 @@ bool value_equals(Value a, Value b) {
 
             case NumberValue:
                 return a->number.value == b->number.value;
+
+            case BooleanValue:
+                return a->boolean.value == b->boolean.value;
 
             case StringValue:
                 if (a->string.length != b->string.length) {
@@ -439,6 +452,14 @@ void value_dump(FILE *stream, Value value) {
                     fprintf(stream, "%" PRId64, (word) value->number.value);
                 } else {
                     fprintf(stream, "%f", value->number.value);
+                }
+                break;
+            
+            case BooleanValue:
+                if (value->boolean.value) {
+                    fprintf(stream, "true");
+                } else {
+                    fprintf(stream, "false");
                 }
                 break;
 

@@ -11,7 +11,8 @@ typedef enum {
     MapValue,
     NativeValue,
     StringValue,
-    NumberValue
+    NumberValue,
+    BooleanValue
 } ValueType;
 
 typedef struct value {
@@ -27,6 +28,10 @@ typedef struct value {
         struct {
             double value;
         } number;
+
+        struct {
+            bool value;
+        } boolean;
 
         struct {
             // TODO: cache nul-terminated string
