@@ -55,8 +55,10 @@ Machine machine_create(void) {
     machine_enter_native(result, "continue", machine_continue);
     machine_enter_native(result, "equals", machine_equals);
     machine_enter_native(result, "head", machine_head);
+    machine_enter_native(result, "type-of", machine_type_of);
     machine_enter_native(result, "tail", machine_tail);
     machine_enter_native(result, "split", machine_split);
+    machine_enter_native(result, "milliseconds", machine_milliseconds);
     machine_enter_native(result, "nil", machine_nil);
     machine_enter_native(result, "length", machine_length);
     machine_enter_native(result, "concatenate", machine_concatenate);
@@ -612,6 +614,50 @@ void machine_head(Machine machine) {
     machine->$0 = NULL;
 }
 
+void machine_type_of(Machine machine) {
+    if (machine->datastack == NULL) {
+        fatal("'type-of' expects one argument");
+    } else if (machine->datastack->type != ListValue) {
+        fatal("illegal datastack");
+    }
+
+    machine->$0 = machine->datastack->list.head;
+    machine->datastack = machine->datastack->list.tail;
+
+    char *name;
+    if (machine->$0 == NULL) {
+        name = "list";
+    } else {
+        switch (machine->$0->type) {
+            case SymbolValue:
+                name = "symbol";
+                break;
+            case ListValue:
+                name = "list";
+                break;
+            case MapValue:
+                name = "map";
+                break;
+            case NativeValue:
+                name = "function";
+                break;
+            case StringValue:
+                name = "string";
+                break;
+            case NumberValue:
+                name = "number";
+                break;
+            case BooleanValue:
+                name = "boolean";
+                break;
+        }
+
+        machine->$0 = NULL;
+    }
+
+    machine->datastack = value_list(value_string_from_string(name), machine->datastack);
+}
+
 void machine_split(Machine machine) {
     if (machine->datastack == NULL) {
         fatal("empty datastack");
@@ -650,6 +696,12 @@ void machine_split(Machine machine) {
     machine->$2 = NULL;
     machine->datastack = value_list(machine->$1, machine->datastack);
     machine->$1 = NULL;
+}
+
+void machine_milliseconds(Machine machine) {
+    struct timeval time;
+    gettimeofday(&time, NULL);
+    machine->datastack = value_list(value_number((double) time.tv_usec / 1000.0 + (double) time.tv_sec * 1000.0), machine->datastack);
 }
 
 void machine_tail(Machine machine) {
@@ -801,7 +853,6 @@ void machine_put(Machine machine) {
 }
 
 void machine_get(Machine machine) {
-    // ... map key -> value
     if (machine->datastack == NULL) {
         fatal("empty datastack");
     } else if (machine->datastack->type != ListValue) {
@@ -826,14 +877,12 @@ void machine_get(Machine machine) {
 }
 
 void machine_empty_map(Machine machine) {
-    // ... -> map
     machine->$0 = value_map(16);
     machine->datastack = value_list(machine->$0, machine->datastack);
     machine->$0 = NULL;
 }
 
 void machine_get_or_else(Machine machine) {
-    // ... map key value -> value
     if (machine->datastack == NULL) {
         fatal("'get-or-else' expects three arguments");
     } else if (machine->datastack->type != ListValue) {
@@ -919,7 +968,7 @@ void machine_if(Machine machine) {
     if (machine->$2 != NULL && machine->$2->type != ListValue) {
         fatal("illegal argument for function 'if'");
     }
-    
+
     if (machine->$0->boolean.value) {
         machine->$1 = machine->$2;
     }

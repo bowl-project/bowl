@@ -48,6 +48,10 @@ void machine_tail(Machine machine);
 
 void machine_split(Machine machine);
 
+void machine_milliseconds(Machine machine);
+
+void machine_type_of(Machine machine);
+
 void machine_nil(Machine machine);
 
 void machine_length(Machine machine);

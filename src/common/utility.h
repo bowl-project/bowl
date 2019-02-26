@@ -16,6 +16,7 @@
 #include <limits.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/time.h>
 
 #ifndef max
 #define max(a, b) ((a) > (b) ? (a) : (b))

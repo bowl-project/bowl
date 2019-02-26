@@ -1,3 +1,5 @@
+milliseconds
+
 "rot quote get-dictionary" tokens
 "put rot rot continue" tokens
 "invoke" tokens 
@@ -154,6 +156,11 @@ define clear (- ... ->  -)
     nil set-datastack
 ;
 
+(- Includes the file denoted by the specified path -)
+define include (- ... path -> ... -)
+    [ dup head read tokens rot concatenate swap tail continue ] invoke
+;
+
 define on-unknown-word
     dup show nil swap prepend "-v" prepend "command" execute "" equals
     [ (- do nothing -) ]
@@ -172,4 +179,23 @@ define main
     main
 ;
 
+(- include standard library -)
+"assets/math.lime" include
+
+(- show the welcome message -)
+"
+Welcome to the interactive shell
+ __    ____  __  __  ____ 
+(  )  (_  _)(  \\/  )( ___)
+ )(__  _)(_  )    (  )__) 
+(____)(____)(_/\\/\\_)(____)
+
+Version 0.0.1-SNAPSHOT
+" println
+
+"The standard library took " print
+milliseconds swap sub dup 1 rem sub show print
+"ms to load" println
+
+(- start the interactive shell -)
 main
