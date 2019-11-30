@@ -489,7 +489,6 @@ static void value_to_string(Value value, char **buffer, u64 *length, u64 *capaci
 
 void value_show(Value value, char **buffer, u64 *length) {
     u64 capacity = 4096;
-
     *length = 0;
     *buffer = malloc(capacity * sizeof(char));
     if (*buffer != NULL) {

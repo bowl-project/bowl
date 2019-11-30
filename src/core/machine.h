@@ -1,6 +1,10 @@
 #ifndef MACHINE_H
 #define MACHINE_H
 
+#if defined(unix) || defined(__unix__) || defined(__unix)
+#include <dlfcn.h>
+#endif
+
 #include "../common/common.h"
 #include "value.h"
 
@@ -62,10 +66,24 @@ Value machine_instruction_equals(Stack *stack);
 
 Value machine_instruction_show(Stack *stack);
 
-Value machine_instruction_length(Stack *stack);
-
 Value machine_instruction_throw(Stack *stack);
 
+Value machine_instruction_length(Stack *stack);
+
+Value machine_instruction_nil(Stack *stack);
+
+Value machine_instruction_push(Stack *stack);
+
+Value machine_instruction_library(Stack *stack);
+
 Value machine_instruction_run(Stack *stack);
+
+/* ***** foreign function interface ***** */
+
+Value lime_register_function(Stack *stack, char *name, NativeFunction function);
+
+Value lime_exception(Stack *stack, char *message, ...);
+
+char *lime_value_type(Value value);
 
 #endif

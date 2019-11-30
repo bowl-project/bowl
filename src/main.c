@@ -64,6 +64,9 @@ int main(int argc, char *argv[]) {
     enter(&frame, "length", machine_instruction_length);
     enter(&frame, "throw", machine_instruction_throw);
     enter(&frame, "show", machine_instruction_show);
+    enter(&frame, "nil", machine_instruction_nil);
+    enter(&frame, "push", machine_instruction_push);
+    enter(&frame, "library", machine_instruction_library);
 
     for (int i = argc - 1; i > 0; --i) {
         result = machine_symbol(&frame, (u8*) argv[i], strlen(argv[i]));

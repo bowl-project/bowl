@@ -539,37 +539,36 @@ Value machine_instruction_hash(Stack *stack) {
 }
 
 Value machine_instruction_equals(Stack *stack) {
-    Stack frame = MACHINE_ALLOCATE(stack, NULL, NULL, NULL);
     InternalResult result;
 
-    if (*frame.datastack == NULL) {
-        result = machine_exception(&frame, "stack underflow in function '%s'", __FUNCTION__);
+    if (*stack->datastack == NULL) {
+        result = machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
         return result.exception == NULL ? result.value : result.exception;
     }
 
-    frame.registers[0] = (*frame.datastack)->list.head;
-    *frame.datastack = (*frame.datastack)->list.tail;
+    const Value a = (*stack->datastack)->list.head;
+    *stack->datastack = (*stack->datastack)->list.tail;
 
-    if (*frame.datastack == NULL) {
-        result = machine_exception(&frame, "stack underflow in function '%s'", __FUNCTION__);
+    if (*stack->datastack == NULL) {
+        result = machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
         return result.exception == NULL ? result.value : result.exception;
     }
 
-    frame.registers[1] = (*frame.datastack)->list.head;
-    *frame.datastack = (*frame.datastack)->list.tail;
+    const Value b = (*stack->datastack)->list.head;
+    *stack->datastack = (*stack->datastack)->list.tail;
 
-    const bool equals = value_equals(frame.registers[0], frame.registers[1]);
-    result = machine_boolean(&frame, equals);
+    const bool equals = value_equals(a, b);
+    result = machine_boolean(stack, equals);
 
     if (result.exception != NULL) {
         return result.exception;
     }
 
-    result = machine_list(&frame, result.value, *frame.datastack);
+    result = machine_list(stack, result.value, *stack->datastack);
     if (result.exception != NULL) {
         return result.exception;
     } else {
-        *frame.datastack = result.value;
+        *stack->datastack = result.value;
         return NULL;
     }
 }
@@ -602,7 +601,7 @@ Value machine_instruction_length(Stack *stack) {
             return NULL;   
         }
     } else {
-        result = machine_exception(stack, "argument of illegal type '%s' provided in function '%s'", value_type(value), __FUNCTION__);
+        result = machine_exception(stack, "argument of illegal type '%s' provided in function '%s' (expected 'list', 'string' or 'map')", value_type(value), __FUNCTION__);
         return result.exception == NULL ? result.value : result.exception;
     }
 }
@@ -617,6 +616,54 @@ Value machine_instruction_throw(Stack *stack) {
     *stack->datastack = (*stack->datastack)->list.tail;
 
     return value;
+}
+
+Value machine_instruction_nil(Stack *stack) {
+    InternalResult result = machine_list(stack, NULL, *stack->datastack);
+    if (result.exception != NULL) {
+        return result.exception;
+    } else {
+        *stack->datastack = result.value;
+        return NULL;
+    }
+}
+
+Value machine_instruction_push(Stack *stack) {
+    InternalResult result;
+
+    if (*stack->datastack == NULL) {
+        result = machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
+        return result.exception == NULL ? result.value : result.exception;
+    }
+
+    const Value head = (*stack->datastack)->list.head;
+    *stack->datastack = (*stack->datastack)->list.tail;
+
+    if (*stack->datastack == NULL) {
+        result = machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
+        return result.exception == NULL ? result.value : result.exception;
+    }
+
+    const Value tail = (*stack->datastack)->list.head;
+    *stack->datastack = (*stack->datastack)->list.tail;
+
+    if (tail != NULL && tail->type != ListValue) {
+        result = machine_exception(stack, "argument of illegal type '%s' provided in function '%s' (expected 'list')", value_type(tail), __FUNCTION__);
+        return result.exception == NULL ? result.value : result.exception;
+    }
+
+    result = machine_list(stack, head, tail);
+    if (result.exception != NULL) {
+        return result.exception;
+    }
+
+    result = machine_list(stack, result.value, *stack->datastack);
+    if (result.exception != NULL) {
+        return result.exception;
+    } else {
+        *stack->datastack = result.value;
+        return NULL;
+    }
 }
 
 Value machine_instruction_show(Stack *stack) {
@@ -652,6 +699,56 @@ Value machine_instruction_show(Stack *stack) {
         *stack->datastack = result.value;
         return NULL;
     }
+}
+
+Value machine_instruction_library(Stack *stack) {
+    InternalResult result;
+
+    if (*stack->datastack == NULL) {
+        result = machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
+        return result.exception == NULL ? result.value : result.exception;
+    }
+
+    const Value value = (*stack->datastack)->list.head;
+    *stack->datastack = (*stack->datastack)->list.tail;
+
+    if (value == NULL || value->type != StringValue) {
+        result = machine_exception(stack, "argument of illegal type '%s' provided in function '%s' (expected 'string')", value_type(value), __FUNCTION__);
+        return result.exception == NULL ? result.value : result.exception;
+    }
+
+    char *path = malloc(value->string.length + 1);
+    if (path == NULL) {
+        return &machine_heap_exception;
+    }
+
+    memcpy(path, value->string.bytes, value->string.length);
+    path[value->string.length] = '\0';
+
+    #if defined(unix) || defined(__unix__) || defined(__unix)
+    void *const handle = dlopen(path, RTLD_LAZY);
+
+    if (handle == NULL) {
+        result = machine_exception(stack, "failed to open library '%s' in function '%s'", path, __FUNCTION__);
+        free(path);
+        return result.exception == NULL ? result.value : result.exception;
+    }
+
+    Value (*initialize)(Stack*) = dlsym(handle, "initialize");
+    if (initialize == NULL) {
+        dlclose(handle);
+        result = machine_exception(stack, "failed to initialize library '%s' in function '%s'", path, __FUNCTION__); 
+        free(path);
+        return result.exception == NULL ? result.value : result.exception;
+    }
+
+    const Value exception = initialize(stack);
+    if (exception != NULL) {
+        return exception;
+    }
+    #endif
+
+    return NULL;
 }
 
 Value machine_instruction_run(Stack *stack) {
@@ -768,4 +865,52 @@ Value machine_instruction_run(Stack *stack) {
     }
 
     return NULL;
+}
+
+/* ***** foreign function interface ***** */
+
+Value lime_register_function(Stack *stack, char *name, NativeFunction function) {
+    Stack frame = MACHINE_ALLOCATE(stack, NULL, NULL, NULL);
+    InternalResult result;
+
+    result = machine_symbol(&frame, (u8*) name, strlen(name));
+    
+    if (result.exception != NULL) {
+        return result.exception;
+    }
+    
+    frame.registers[0] = result.value;
+    result = machine_native(&frame, function);
+    
+    if (result.exception != NULL) {
+        return result.exception;
+    }
+    
+    frame.registers[1] = result.value;
+    result = machine_map_put(&frame, *frame.dictionary, frame.registers[0], frame.registers[1]);
+
+    if (result.exception != NULL) {
+        return result.exception;
+    }
+
+    *frame.dictionary = result.value;
+
+    return NULL;
+}
+
+Value lime_exception(Stack *stack, char *message, ...) {
+    InternalResult result;
+    char buffer[4096];
+    va_list list;
+
+    va_start(list, message);
+    vsnprintf(&buffer[0], sizeof(buffer) / sizeof(buffer[0]), message, list);
+    va_end(list);
+    
+    result = machine_string(stack, (u8*) &buffer[0], strlen(buffer));
+    return result.exception == NULL ? result.value : result.exception;
+}
+
+char *lime_value_type(Value value) {
+    return value_type(value);
 }
