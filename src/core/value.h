@@ -72,6 +72,8 @@ u64 value_byte_size(Value value);
 
 void value_dump(FILE *stream, Value value);
 
+void value_show(Value value, char **buffer, u64 *length);
+
 u64 value_length(Value value);
 
 char *value_type(Value value);

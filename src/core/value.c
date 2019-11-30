@@ -285,6 +285,218 @@ void value_dump(FILE *stream, Value value) {
     }
 }
 
+static bool value_print_buffer(char **buffer, u64 *length, u64 *capacity, char *message, ...) {
+    va_list list;
+
+    va_start(list, message);
+    u64 required = vsnprintf(NULL, 0, message, list);
+    va_end(list);
+    
+    if (required < 0) {
+        free(*buffer);
+        *buffer = NULL;
+        *length = 0;
+        *capacity = 0;
+        return false;
+    }
+
+    required += 1;
+
+    if (required > *capacity - *length) {
+        *capacity = MAX(*capacity * 2, *capacity + (required - (*capacity - *length)));
+
+        char *const new_buffer = realloc(*buffer, *capacity * sizeof(char));
+        if (new_buffer == NULL) {
+            free(*buffer);
+            *buffer = NULL;
+            *length = 0;
+            *capacity = 0;
+            return false;
+        }
+
+        *buffer = new_buffer;
+    }
+
+    va_start(list, message);
+    required = vsnprintf(*buffer + *length, *capacity - *length, message, list);
+    va_end(list);
+
+    if (required < *capacity - *length && required >= 0) {
+        *length += required;
+        return true;
+    } else {
+        // something unexpected happen
+        free(*buffer);
+        *buffer = NULL;
+        *length = 0;
+        *capacity = 0;
+        return false;
+    }
+}
+
+static void value_to_string(Value value, char **buffer, u64 *length, u64 *capacity) {
+    if (value == NULL) {
+        value_print_buffer(buffer, length, capacity, "[ ]");
+    } else {
+        switch (value->type) {
+            case SymbolValue:
+                for (u64 i = 0, end = value->symbol.length; i < end; ++i) {
+                    if (!value_print_buffer(buffer, length, capacity, "%c", value->symbol.bytes[i])) {
+                        return;
+                    }
+                }
+                break;
+
+            case NumberValue:
+                if (is_integer(value->number.value)) {
+                    if (!value_print_buffer(buffer, length, capacity, "%" PRId64, (u64) value->number.value)) {
+                        return;
+                    }
+                } else {
+                    if (!value_print_buffer(buffer, length, capacity, "%f", value->number.value)) {
+                        return;
+                    }
+                }
+                break;
+            
+            case BooleanValue:
+                if (value->boolean.value) {
+                    if (!value_print_buffer(buffer, length, capacity, "true")) {
+                        return;
+                    }
+                } else {
+                    if (!value_print_buffer(buffer, length, capacity, "false")) {
+                        return;
+                    }
+                }
+                break;
+
+            case NativeValue:
+                if (!value_print_buffer(buffer, length, capacity, "0x%08" PRIX64, (u64) value->native.function)) {
+                    return;
+                }
+                break;
+
+            case ListValue:
+                if (!value_print_buffer(buffer, length, capacity, "[ ")) {
+                    return;
+                }
+
+                do {
+                    value_to_string(value->list.head, buffer, length, capacity);
+                    if (*buffer == NULL) {
+                        return;
+                    }
+                    value = value->list.tail;
+                    if (value != NULL) {
+                        if (!value_print_buffer(buffer, length, capacity, " ")) {
+                            return;
+                        }
+                    }
+                } while (value != NULL);
+
+                if (!value_print_buffer(buffer, length, capacity, " ]")) {
+                    return;
+                }
+                break;
+
+            case StringValue:
+                if (!value_print_buffer(buffer, length, capacity, "\"")) {
+                    return;
+                }
+
+                for (u64 i = 0, end = value->string.length; i < end; ++i) {
+                    char const* sequence = escape(value->string.bytes[i]);
+                    if (sequence != NULL) {
+                        if (!value_print_buffer(buffer, length, capacity, "%s", sequence)) {
+                            return;
+                        }
+                    } else {
+                        if (!value_print_buffer(buffer, length, capacity, "%c", value->string.bytes[i])) {
+                            return;
+                        }
+                    }
+                }
+
+                if (!value_print_buffer(buffer, length, capacity, "\"")) {
+                    return;
+                }
+                break;
+
+            case MapValue:
+                if (!value_print_buffer(buffer, length, capacity, "[ ")) {
+                    return;
+                }
+
+                bool first = true;
+                for (u64 i = 0, end = value->map.capacity; i < end; ++i) {
+                    Value bucket = value->map.buckets[i];
+
+                    if (!first && bucket != NULL) {
+                        if (!value_print_buffer(buffer, length, capacity, " ")) {
+                            return;
+                        }
+                    } else if (bucket != NULL) {
+                        first = false;
+                    }
+
+                    while (bucket != NULL) {
+                        if (!value_print_buffer(buffer, length, capacity, "[ ")) {
+                            return;
+                        }
+
+                        value_to_string(bucket->list.head, buffer, length, capacity);
+                        if (*buffer == NULL) {
+                            return;
+                        }
+
+                        bucket = bucket->list.tail;
+                        if (!value_print_buffer(buffer, length, capacity, " ")) {
+                            return;
+                        }
+                        
+                        value_to_string(bucket->list.head, buffer, length, capacity);
+                        if (*buffer == NULL) {
+                            return;
+                        }
+
+                        bucket = bucket->list.tail;
+                        if (!value_print_buffer(buffer, length, capacity, " ]")) {
+                            return;
+                        }
+
+                        if (bucket != NULL) {
+                            if (!value_print_buffer(buffer, length, capacity, " ")) {
+                                return;
+                            }
+                        }
+                    }
+                }
+
+                if (first) {
+                    if (!value_print_buffer(buffer, length, capacity, "] map-from-list")) {
+                        return;
+                    }
+                } else {
+                    if (!value_print_buffer(buffer, length, capacity, " ] map-from-list")) {
+                        return;
+                    }
+                }
+                break;
+        }
+    }
+}
+
+void value_show(Value value, char **buffer, u64 *length) {
+    u64 capacity = 4096;
+
+    *length = 0;
+    *buffer = malloc(capacity * sizeof(char));
+    if (*buffer != NULL) {
+        value_to_string(value, buffer, length, &capacity);
+    }
+}
+
 u64 value_length(Value value) {
     if (value == NULL) {
         return 0;

@@ -14,6 +14,8 @@ char *escape(char c) {
         case '\f': return "\\f";
         case '\0': return "\\0";
         case '\b': return "\\b";
+        case '\"': return "\\\"";
+        case '\\': return "\\\\";
         default:   return NULL;
     }
 }

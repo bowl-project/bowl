@@ -60,7 +60,11 @@ Value machine_instruction_hash(Stack *stack);
 
 Value machine_instruction_equals(Stack *stack);
 
+Value machine_instruction_show(Stack *stack);
+
 Value machine_instruction_length(Stack *stack);
+
+Value machine_instruction_throw(Stack *stack);
 
 Value machine_instruction_run(Stack *stack);
 

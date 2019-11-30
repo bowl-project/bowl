@@ -4,6 +4,15 @@ static u8 *machine_heap_dst = NULL;
 static u8 *machine_heap_src = NULL;
 static u64 machine_heap_ptr = 0;
 static u64 machine_heap_size = 0;
+static struct value machine_heap_exception = {
+    .type = StringValue,
+    .location = NULL,
+    .hash = 1393540937171791872,
+    .symbol = {
+        .length = 13,
+        .bytes = "out of memory"
+    }
+};
 
 static Value machine_relocate(Value value) {
     if (value == NULL) {
@@ -112,16 +121,6 @@ static bool machine_heap_resize(Stack *stack, const u64 new_heap_size) {
 }
 
 InternalResult machine_allocate(Stack *stack, ValueType type, u64 additional) {
-    static struct value machine_heap_exception = {
-        .type = StringValue,
-        .location = NULL,
-        .hash = 1393540937171791872,
-        .symbol = {
-            .length = 13,
-            .bytes = "out of memory"
-        }
-    };
-
     InternalResult result = {
         .value = NULL,
         .exception = NULL
@@ -605,6 +604,53 @@ Value machine_instruction_length(Stack *stack) {
     } else {
         result = machine_exception(stack, "argument of illegal type '%s' provided in function '%s'", value_type(value), __FUNCTION__);
         return result.exception == NULL ? result.value : result.exception;
+    }
+}
+
+Value machine_instruction_throw(Stack *stack) {
+    if (*stack->datastack == NULL) {
+        InternalResult result = machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
+        return result.exception == NULL ? result.value : result.exception;
+    }
+
+    const Value value = (*stack->datastack)->list.head;
+    *stack->datastack = (*stack->datastack)->list.tail;
+
+    return value;
+}
+
+Value machine_instruction_show(Stack *stack) {
+    InternalResult result;
+
+    if (*stack->datastack == NULL) {
+        result = machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
+        return result.exception == NULL ? result.value : result.exception;
+    }
+
+    const Value value = (*stack->datastack)->list.head;
+    *stack->datastack = (*stack->datastack)->list.tail;
+
+    char *buffer;
+    u64 length;
+    value_show(value, &buffer, &length);
+
+    if (buffer == NULL) {
+        return &machine_heap_exception;
+    }
+
+    result = machine_string(stack, (u8*) buffer, length);
+    free(buffer);
+
+    if (result.exception != NULL) {
+        return result.exception;
+    }
+
+    result = machine_list(stack, result.value, *stack->datastack);
+    if (result.exception != NULL) {
+        return result.exception;
+    } else {
+        *stack->datastack = result.value;
+        return NULL;
     }
 }
 

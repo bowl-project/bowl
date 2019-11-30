@@ -62,6 +62,8 @@ int main(int argc, char *argv[]) {
     enter(&frame, "hash", machine_instruction_hash);
     enter(&frame, "equals", machine_instruction_equals);
     enter(&frame, "length", machine_instruction_length);
+    enter(&frame, "throw", machine_instruction_throw);
+    enter(&frame, "show", machine_instruction_show);
 
     for (int i = argc - 1; i > 0; --i) {
         result = machine_symbol(&frame, (u8*) argv[i], strlen(argv[i]));
