@@ -1,9 +1,8 @@
 COMPILER=gcc
-INPUT=src/*.c src/common/*.c src/machine/*.c
+INPUT=$(shell find src -type f -iname '*.c')
 OUTPUT=lime
-FLAGS=-O3 -std=c11
+STANDARD=11
+OPTIMIZE=0
 
 build:
-	$(COMPILER) -o $(OUTPUT) $(FLAGS) $(INPUT) -lm -ldl
-	clear
-	time ./$(OUTPUT) nil quote continue prepend quote swap prepend quote tokens prepend quote read prepend quote show prepend quote assets/bootstrap.lime prepend quote drop prepend quote swap prepend invoke
+	$(COMPILER) -o $(OUTPUT) -std=c$(STANDARD) -O$(OPTIMIZE) $(INPUT) -lm
