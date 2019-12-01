@@ -19,7 +19,7 @@ static void enter(Stack *stack, char *name, NativeFunction function) {
     }
     
     stack->registers[0] = result.value;
-    result = machine_native(stack, function);
+    result = machine_native(stack, NULL, function);
     
     if (result.exception != NULL) {
         fail(result.exception);
@@ -67,6 +67,7 @@ int main(int argc, char *argv[]) {
     enter(&frame, "nil", machine_instruction_nil);
     enter(&frame, "push", machine_instruction_push);
     enter(&frame, "library", machine_instruction_library);
+    enter(&frame, "native", machine_instruction_native);
 
     for (int i = argc - 1; i > 0; --i) {
         result = machine_symbol(&frame, (u8*) argv[i], strlen(argv[i]));
@@ -111,6 +112,10 @@ int main(int argc, char *argv[]) {
 
     // run the machine using the bootstrapped datastack
     const Value exception = machine_instruction_run(&frame);
+
+    // run garbage collector a last time to clean things up (e.g. native libraries)
+    machine_collect_garbage(NULL);
+
     if (exception != NULL) {
         fail(exception);
         return EXIT_FAILURE;

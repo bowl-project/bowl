@@ -1,7 +1,6 @@
 #include "io.h"
 
-// try: ./lime "./library/io/io.so" show library "hello world" show print
-static Value io_print(Stack *stack) {
+Value io_print(Stack *stack) {
     if (*stack->datastack == NULL) {
         return lime_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
     }
@@ -15,17 +14,6 @@ static Value io_print(Stack *stack) {
 
     if (fwrite(value->string.bytes, sizeof(u8), value->string.length, stdout) != value->string.length) {
         return lime_exception(stack, "io exception in function '%s'", __FUNCTION__);
-    }
-
-    return NULL;
-}
-
-Value initialize(Stack *stack) {
-    Value exception;
-    
-    exception = lime_register_function(stack, "print", io_print);
-    if (exception != NULL) {
-        return exception;
     }
 
     return NULL;

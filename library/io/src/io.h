@@ -4,6 +4,6 @@
 #include <stdio.h>
 #include "../../../interface/lime.h"
 
-Value initialize(Stack *stack);
+Value io_print(Stack *stack);
 
 #endif

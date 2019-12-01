@@ -47,6 +47,10 @@ u64 value_hash(Value value) {
                 value->hash += (u64) value->native.function * 31;
                 break;
 
+            case LibraryValue:
+                value->hash += (u64) value->library.handle * 31;
+                break;
+
             case ListValue:
                 value->hash += value_hash(value->list.head) * 31;
                 value->hash += value_hash(value->list.tail) * 31;
@@ -108,6 +112,9 @@ bool value_equals(Value a, Value b) {
 
             case NativeValue:
                 return a->native.function == b->native.function;
+
+            case LibraryValue:
+                return a->library.handle == b->library.handle;
 
             case ListValue:
                 if (a->list.length != b->list.length) {
@@ -215,7 +222,11 @@ void value_dump(FILE *stream, Value value) {
                 break;
 
             case NativeValue:
-                fprintf(stream, "0x%08" PRIX64, (u64) value->native.function);
+                fprintf(stream, "function#0x%08" PRIX64, (u64) value->native.function);
+                break;
+
+            case LibraryValue:
+                fprintf(stream, "library#0x%08" PRIX64, (u64) value->library.handle);
                 break;
 
             case ListValue:
@@ -372,7 +383,13 @@ static void value_to_string(Value value, char **buffer, u64 *length, u64 *capaci
                 break;
 
             case NativeValue:
-                if (!value_print_buffer(buffer, length, capacity, "0x%08" PRIX64, (u64) value->native.function)) {
+                if (!value_print_buffer(buffer, length, capacity, "function#0x%08" PRIX64, (u64) value->native.function)) {
+                    return;
+                }
+                break;
+
+            case LibraryValue:
+                if (!value_print_buffer(buffer, length, capacity, "library#0x%08" PRIX64, (u64) value->library.handle)) {
                     return;
                 }
                 break;
@@ -523,7 +540,8 @@ char *value_type(Value value) {
         [MapValue]     = "map",
         [BooleanValue] = "boolean",
         [NumberValue]  = "number",
-        [StringValue]  = "string"
+        [StringValue]  = "string",
+        [LibraryValue]  = "library"
     };
     
     if (value == NULL) {
@@ -531,4 +549,15 @@ char *value_type(Value value) {
     } else {
         return types[value->type];
     }
+}
+
+char *value_string_to_c_string(Value value) {
+    char *path = malloc(value->string.length + 1);
+    
+    if (path != NULL) {
+        memcpy(path, value->string.bytes, value->string.length);
+        path[value->string.length] = '\0';    
+    }
+
+    return path;
 }

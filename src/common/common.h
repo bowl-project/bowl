@@ -28,6 +28,18 @@ typedef int8_t  s8;
 #define MIN(x, y) ((y) > (x) ? (y) : (x))
 #endif
 
+#if defined(unix) || defined(__unix__) || defined(__unix)
+#define OS_UNIX
+#elif defined(_WIN32) || defined(_WIN64)
+#define OS_WINDOWS
+#endif
+
+#if defined(OS_UNIX)
+#include <dlfcn.h>
+#elif defined(OS_WINDOWS)
+#include <windows.h>
+#endif
+
 bool is_integer(double value);
 
 char *escape(char c);

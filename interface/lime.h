@@ -21,7 +21,8 @@ typedef enum {
     MapValue     = 3,
     BooleanValue = 4,
     NumberValue  = 5,
-    StringValue  = 6
+    StringValue  = 6,
+    LibraryValue = 7
 } ValueType;
 
 struct value;
@@ -73,12 +74,21 @@ typedef struct value {
         } map;
 
         struct {
+            struct value *library;
             NativeFunction function;
         } native;
+
+        struct {
+            #if defined(OS_UNIX)
+                void *handle;
+            #elif defined(OS_WINDOWS)
+                HINSTANCE handle;
+            #else
+                void *handle;
+            #endif
+        } library;
     };
 } *Value;
-
-extern Value lime_register_function(Stack *stack, char *name, NativeFunction function);
 
 extern Value lime_exception(Stack *stack, char *message, ...);
 

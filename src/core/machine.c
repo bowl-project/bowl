@@ -1,9 +1,17 @@
 #include "machine.h"
 
+// memory heaps
 static u8 *machine_heap_dst = NULL;
 static u8 *machine_heap_src = NULL;
 static u64 machine_heap_ptr = 0;
 static u64 machine_heap_size = 0;
+
+// list of weak references to all loaded libraries
+static Value *machine_heap_libraries = NULL;
+static u64 machine_heap_libraries_capacity = 0;
+static u64 machine_heap_libraries_size = 0;
+
+// cached version of the out of heap exception
 static struct value machine_heap_exception = {
     .type = StringValue,
     .location = NULL,
@@ -14,10 +22,20 @@ static struct value machine_heap_exception = {
     }
 };
 
+static struct value machine_heap_library_finalize_exception = {
+    .type = StringValue,
+    .location = NULL,
+    .hash = 365473802495556352,
+    .symbol = {
+        .length = 26,
+        .bytes = "failed to finalize library"
+    }
+};
+
 static Value machine_relocate(Value value) {
     if (value == NULL) {
         return NULL;
-    } else if ((u64) value < (u64) machine_heap_src || (u64) value > (u64) (machine_heap_src + machine_heap_size)) {
+    } else if ((u64) value < (u64) machine_heap_src || (u64) value >= (u64) (machine_heap_src + machine_heap_size)) {
         // only objects that resize inside the 'machine_heap_src' are managed by the garbage collector
         return value;
     } else if (value->location == NULL) {
@@ -33,7 +51,7 @@ static Value machine_relocate(Value value) {
     return value->location;
 }
 
-void machine_collect_garbage(Stack *stack) {
+Value machine_collect_garbage(Stack *stack) {
     // swap heaps
     u8 *const swap = machine_heap_dst;
     machine_heap_dst = machine_heap_src;
@@ -60,6 +78,9 @@ void machine_collect_garbage(Stack *stack) {
         const u64 bytes = value_byte_size(value);
 
         switch (value->type) {
+            case NativeValue:
+                value->native.library = machine_relocate(value->native.library);
+                break;
             case ListValue:
                 value->list.head = machine_relocate(value->list.head);
                 value->list.tail = machine_relocate(value->list.tail);
@@ -76,16 +97,63 @@ void machine_collect_garbage(Stack *stack) {
 
         scan += bytes;
     }
+
+    // finalize all libraries which are no longer needed
+    bool failed_to_finalize = false;
+    u64 new_libraries_size = 0;
+    u64 previous_libraries_size = 0;
+    for (u64 i = 0; i < machine_heap_libraries_size; ++i) {
+        const Value value = machine_heap_libraries[i];
+
+        if ((u64) value >= (u64) machine_heap_src && (u64) value < (u64) (machine_heap_src + machine_heap_size)) {
+            // value is not 'NULL' and thus marks the new end of the list
+            previous_libraries_size = new_libraries_size;
+            new_libraries_size = i + 1;
+
+            // this value resides inside the dirty heap
+            if (value->location == NULL) {
+                // this value was not relocated by the garbage collector and thus must be garbage
+                #if defined(OS_UNIX)
+                if (dlclose(value->library.handle) != 0) {
+                #elif defined(OS_WINDOWS)
+                if (FreeLibrary(value->library.handle) == 0) {
+                #else
+                if (false) {
+                #endif
+                    failed_to_finalize = true;
+                } else {
+                    // delete the weak reference
+                    machine_heap_libraries[i] = NULL;
+                    new_libraries_size = previous_libraries_size;
+                }
+            } else {
+                // remember the new location since this library is still in use
+                machine_heap_libraries[i] = value->location;
+            }
+        }
+
+        // swap finalized values to pack the list of libraries over time
+        if (machine_heap_libraries[i] == NULL && i + 1 < machine_heap_libraries_size && machine_heap_libraries[i + 1] != NULL) {
+            machine_heap_libraries[i] = machine_heap_libraries[i + 1];
+            machine_heap_libraries[i + 1] = NULL;
+            i -= 1;
+        }
+    }
+
+    // remember the new size to shorten future executions of the loop above
+    machine_heap_libraries_size = new_libraries_size;
+
+    if (failed_to_finalize) {
+        return &machine_heap_library_finalize_exception;
+    } else {
+        return NULL;
+    }
 }
 
 static bool machine_heap_reallocate(u64 new_heap_size) {
     if (machine_heap_src == NULL) {
         machine_heap_src = malloc(new_heap_size * sizeof(u8));
-        if (machine_heap_src == NULL) {
-            return false;
-        } else {
-            return true;
-        }
+        return machine_heap_src != NULL;
     } else {
         u8 *const new_heap_src = realloc(machine_heap_src, new_heap_size * sizeof(u8));
         if (new_heap_src == NULL) {
@@ -98,26 +166,29 @@ static bool machine_heap_reallocate(u64 new_heap_size) {
     }
 }
 
-static bool machine_heap_resize(Stack *stack, const u64 new_heap_size) {
+static Value machine_heap_resize(Stack *stack, const u64 new_heap_size) {
     // as we cannot simply resize both heaps at once we have to resize the 'machine_heap_src' 
     // which is unused at this point
     if (!machine_heap_reallocate(new_heap_size)) {
-        return false;
+        return &machine_heap_exception;
     }
     
     // copy all objects from 'machine_heap_dst' to the new 'machine_heap_src'
-    machine_collect_garbage(stack);
+    const Value exception = machine_collect_garbage(stack);
+    if (exception != NULL) {
+        return exception;
+    }
     
     // since the two heaps were swapped by the previous call we can resize 'machine_heap_src' again
     if (!machine_heap_reallocate(new_heap_size)) {
-        return false;
+        return &machine_heap_exception;
     }
 
     // it is important to set the 'machine_heap_size' not until both heaps were resized, because it
     // is possible for the second resize to fail in which case both heaps are unevenly large
     machine_heap_size = new_heap_size;
 
-    return true;
+    return NULL;
 }
 
 InternalResult machine_allocate(Stack *stack, ValueType type, u64 additional) {
@@ -130,7 +201,10 @@ InternalResult machine_allocate(Stack *stack, ValueType type, u64 additional) {
 
     if (machine_heap_ptr + bytes > machine_heap_size) {
         // try to collect garbage
-        machine_collect_garbage(stack);
+        result.exception = machine_collect_garbage(stack);
+        if (result.exception != NULL) {
+            return result;
+        }
 
         // resize the heaps if there is still not enough memory available
         if (machine_heap_ptr + bytes > machine_heap_size) {
@@ -139,13 +213,15 @@ InternalResult machine_allocate(Stack *stack, ValueType type, u64 additional) {
             const u64 new_heap_size = MAX(machine_heap_size * 2, minimum_heap_size);
             
             // try to resize the heap to the "best" heap size
-            if (!machine_heap_resize(stack, new_heap_size)) {
-
+            result.exception = machine_heap_resize(stack, new_heap_size);
+            if (result.exception == &machine_heap_exception && minimum_heap_size < new_heap_size) {
                 // try to resize the heap to the minimum if it is truly smaller than the "best" heap size
-                if (!(minimum_heap_size < new_heap_size && machine_heap_resize(stack, minimum_heap_size))) {
-                    result.exception = &machine_heap_exception;
-                    return result;  
+                result.exception = machine_heap_resize(stack, minimum_heap_size);
+                if (result.exception != NULL) {
+                    return result;
                 }
+            } else if (result.exception != NULL) {
+                return result;
             }
         }
     }
@@ -162,13 +238,20 @@ InternalResult machine_allocate(Stack *stack, ValueType type, u64 additional) {
 
 /* ***** internals ***** */
 
-InternalResult machine_exception(Stack *stack, char *message, ...) {
+static Value machine_vexception(Stack *stack, char *message, va_list *list) {
+    InternalResult result;
     char buffer[4096];
+    vsnprintf(&buffer[0], sizeof(buffer) / sizeof(buffer[0]), message, *list);
+    result = machine_string(stack, (u8*) &buffer[0], strlen(buffer));
+    return result.exception == NULL ? result.value : result.exception;
+}
+
+Value machine_exception(Stack *stack, char *message, ...) {
     va_list list;
     va_start(list, message);
-    vsnprintf(&buffer[0], sizeof(buffer) / sizeof(buffer[0]), message, list);
+    const Value result = machine_vexception(stack, message, &list);
     va_end(list);
-    return machine_string(stack, (u8*) &buffer[0], strlen(buffer));
+    return result;
 }
 
 InternalResult machine_symbol(Stack *stack, u8 *bytes, u64 length) {
@@ -194,10 +277,12 @@ InternalResult machine_string(Stack *stack, u8 *bytes, u64 length) {
     return result;
 }
 
-InternalResult machine_native(Stack *stack, NativeFunction function) {
-    InternalResult result = machine_allocate(stack, NativeValue, 0);
+InternalResult machine_native(Stack *stack, Value library, NativeFunction function) {
+    Stack frame = MACHINE_ALLOCATE(stack, library, NULL, NULL);
+    InternalResult result = machine_allocate(&frame, NativeValue, 0);
     
     if (result.exception == NULL) {
+        result.value->native.library = library;
         result.value->native.function = function;
     }
 
@@ -254,6 +339,69 @@ InternalResult machine_boolean(Stack *stack, bool value) {
         result.value->boolean.value = value;
     }
 
+    return result;
+}
+
+InternalResult machine_library(Stack *stack, char *path) {
+    InternalResult result;
+
+    result = machine_allocate(stack, LibraryValue, 0);
+    if (result.exception != NULL) {
+        return result;
+    }
+
+    // remember a weak reference to the library
+    if (machine_heap_libraries_size >= machine_heap_libraries_capacity) {
+        machine_heap_libraries_capacity = MAX(machine_heap_libraries_capacity * 2, 16);
+
+        if (machine_heap_libraries == NULL) {
+            machine_heap_libraries = malloc(machine_heap_libraries_capacity * sizeof(Value));
+            if (machine_heap_libraries == NULL) {
+                result.exception = &machine_heap_exception;
+                result.value = NULL;
+                return result;
+            }
+        } else {
+            Value *const new_libraries = realloc(machine_heap_libraries, machine_heap_libraries_capacity * sizeof(Value));
+            if (new_libraries == NULL) {
+                result.exception = &machine_heap_exception;
+                result.value = NULL;
+                return result;
+            } else {
+                machine_heap_libraries = new_libraries;
+            }
+        }
+    }
+
+    machine_heap_libraries[machine_heap_libraries_size++] = result.value;
+
+    // it is important to open the shared library last, otherwise there would be a case where
+    // we have to close the library (e.g. in case of a 'out of memory' exception). This may 
+    // fail again, thus leading to a point where we need to throw an exception which reports 
+    // this failure. However, the user isn't able to react in an appropriate way to this
+    // exception, because we are in the middle of the 'library' constructor and there is
+    // no reference to the handle available to the user. That is, the user is not able to 
+    // close the library and the internal reference counter of it will never reach zero.
+    #if defined(OS_UNIX)
+        void *const handle = dlopen(path, RTLD_LAZY);
+    #elif defined(OS_WINDOWS)
+        const HINSTANCE handle = LoadLibrary(path);
+    #else
+        // setting the handle to 'NULL' here triggers the error in the next line, which is 
+        // desired because native libraries are not supported on this platform.
+        void *const handle = NULL;
+    #endif
+
+    if (handle == NULL) {
+        // decrement the size to remove the weak reference of the library
+        machine_heap_libraries_size--;
+
+        result.exception = machine_exception(stack, "failed to load library '%s' in function '%s'", path, __FUNCTION__);
+        result.value = NULL;
+        return result;
+    }
+
+    result.value->library.handle = handle;
     return result;
 }
 
@@ -476,6 +624,16 @@ Value machine_instruction_type(Stack *stack) {
         }
     };
 
+    static struct value library_type = {
+        .type = StringValue,
+        .location = NULL,
+        .hash = 365473802495556352,
+        .symbol = {
+            .length = 7,
+            .bytes = "library"
+        }
+    };
+
     static Value types[] = {
         [SymbolValue] = &symbol_type,
         [ListValue] = &list_type,
@@ -483,14 +641,14 @@ Value machine_instruction_type(Stack *stack) {
         [MapValue] = &map_type,
         [BooleanValue] = &boolean_type,
         [NumberValue] = &number_type,
-        [StringValue] = &string_type
+        [StringValue] = &string_type,
+        [LibraryValue] = &library_type
     };
     
     InternalResult result;
 
     if (*stack->datastack == NULL) {
-        result = machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
-        return result.exception == NULL ? result.value : result.exception;
+        return machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
     }
 
     const Value value = (*stack->datastack)->list.head;
@@ -514,8 +672,7 @@ Value machine_instruction_hash(Stack *stack) {
     InternalResult result;
 
     if (*stack->datastack == NULL) {
-        result = machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
-        return result.exception == NULL ? result.value : result.exception;
+        return machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
     }
 
     const Value value = (*stack->datastack)->list.head;
@@ -542,16 +699,14 @@ Value machine_instruction_equals(Stack *stack) {
     InternalResult result;
 
     if (*stack->datastack == NULL) {
-        result = machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
-        return result.exception == NULL ? result.value : result.exception;
+        return machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
     }
 
     const Value a = (*stack->datastack)->list.head;
     *stack->datastack = (*stack->datastack)->list.tail;
 
     if (*stack->datastack == NULL) {
-        result = machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
-        return result.exception == NULL ? result.value : result.exception;
+        return machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
     }
 
     const Value b = (*stack->datastack)->list.head;
@@ -577,8 +732,7 @@ Value machine_instruction_length(Stack *stack) {
     InternalResult result;
 
     if (*stack->datastack == NULL) {
-        result = machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
-        return result.exception == NULL ? result.value : result.exception;
+        return machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
     }
 
     const Value value = (*stack->datastack)->list.head;
@@ -601,15 +755,13 @@ Value machine_instruction_length(Stack *stack) {
             return NULL;   
         }
     } else {
-        result = machine_exception(stack, "argument of illegal type '%s' provided in function '%s' (expected 'list', 'string' or 'map')", value_type(value), __FUNCTION__);
-        return result.exception == NULL ? result.value : result.exception;
+        return machine_exception(stack, "argument of illegal type '%s' provided in function '%s' (expected 'list', 'string' or 'map')", value_type(value), __FUNCTION__);
     }
 }
 
 Value machine_instruction_throw(Stack *stack) {
     if (*stack->datastack == NULL) {
-        InternalResult result = machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
-        return result.exception == NULL ? result.value : result.exception;
+        return machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
     }
 
     const Value value = (*stack->datastack)->list.head;
@@ -632,24 +784,21 @@ Value machine_instruction_push(Stack *stack) {
     InternalResult result;
 
     if (*stack->datastack == NULL) {
-        result = machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
-        return result.exception == NULL ? result.value : result.exception;
+        return machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
     }
 
     const Value head = (*stack->datastack)->list.head;
     *stack->datastack = (*stack->datastack)->list.tail;
 
     if (*stack->datastack == NULL) {
-        result = machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
-        return result.exception == NULL ? result.value : result.exception;
+        return machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
     }
 
     const Value tail = (*stack->datastack)->list.head;
     *stack->datastack = (*stack->datastack)->list.tail;
 
     if (tail != NULL && tail->type != ListValue) {
-        result = machine_exception(stack, "argument of illegal type '%s' provided in function '%s' (expected 'list')", value_type(tail), __FUNCTION__);
-        return result.exception == NULL ? result.value : result.exception;
+        return machine_exception(stack, "argument of illegal type '%s' provided in function '%s' (expected 'list')", value_type(tail), __FUNCTION__);
     }
 
     result = machine_list(stack, head, tail);
@@ -670,8 +819,7 @@ Value machine_instruction_show(Stack *stack) {
     InternalResult result;
 
     if (*stack->datastack == NULL) {
-        result = machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
-        return result.exception == NULL ? result.value : result.exception;
+        return machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
     }
 
     const Value value = (*stack->datastack)->list.head;
@@ -705,50 +853,95 @@ Value machine_instruction_library(Stack *stack) {
     InternalResult result;
 
     if (*stack->datastack == NULL) {
-        result = machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
-        return result.exception == NULL ? result.value : result.exception;
+        return machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
     }
 
     const Value value = (*stack->datastack)->list.head;
     *stack->datastack = (*stack->datastack)->list.tail;
 
     if (value == NULL || value->type != StringValue) {
-        result = machine_exception(stack, "argument of illegal type '%s' provided in function '%s' (expected 'string')", value_type(value), __FUNCTION__);
-        return result.exception == NULL ? result.value : result.exception;
+        return machine_exception(stack, "argument of illegal type '%s' provided in function '%s' (expected 'string')", value_type(value), __FUNCTION__);
     }
 
-    char *path = malloc(value->string.length + 1);
+    char *path = value_string_to_c_string(value);
     if (path == NULL) {
         return &machine_heap_exception;
     }
 
-    memcpy(path, value->string.bytes, value->string.length);
-    path[value->string.length] = '\0';
+    result = machine_library(stack, path);
+    free(path);
 
-    #if defined(unix) || defined(__unix__) || defined(__unix)
-    void *const handle = dlopen(path, RTLD_LAZY);
-
-    if (handle == NULL) {
-        result = machine_exception(stack, "failed to open library '%s' in function '%s'", path, __FUNCTION__);
-        free(path);
-        return result.exception == NULL ? result.value : result.exception;
+    if (result.exception != NULL) {
+        return result.exception;
     }
 
-    Value (*initialize)(Stack*) = dlsym(handle, "initialize");
-    if (initialize == NULL) {
-        dlclose(handle);
-        result = machine_exception(stack, "failed to initialize library '%s' in function '%s'", path, __FUNCTION__); 
-        free(path);
-        return result.exception == NULL ? result.value : result.exception;
+    result = machine_list(stack, result.value, *stack->datastack);
+    if (result.exception != NULL) {
+        return result.exception;
+    } else {
+        *stack->datastack = result.value;
+        return NULL;
+    }
+}
+
+Value machine_instruction_native(Stack *stack) {
+    InternalResult result;
+
+    if (*stack->datastack == NULL) {
+        return machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
     }
 
-    const Value exception = initialize(stack);
-    if (exception != NULL) {
-        return exception;
+    const Value symbol = (*stack->datastack)->list.head;
+    *stack->datastack = (*stack->datastack)->list.tail;
+
+    if (symbol == NULL || symbol->type != StringValue) {
+        return machine_exception(stack, "argument of illegal type '%s' provided in function '%s' (expected 'string')", value_type(symbol), __FUNCTION__);
     }
+
+    if (*stack->datastack == NULL) {
+        return machine_exception(stack, "stack underflow in function '%s'", __FUNCTION__);
+    }
+
+    const Value library = (*stack->datastack)->list.head;
+    *stack->datastack = (*stack->datastack)->list.tail;
+
+    if (library == NULL || library->type != LibraryValue) {
+        return machine_exception(stack, "argument of illegal type '%s' provided in function '%s' (expected 'library')", value_type(library), __FUNCTION__);
+    }
+
+    char *const symbol_name = value_string_to_c_string(symbol);
+    if (symbol_name == NULL) {
+        return &machine_heap_exception;
+    }
+
+    #if defined(OS_UNIX)
+        Value (*const function)(Stack*) = (Value (*)(Stack*)) dlsym(library->library.handle, symbol_name);
+    #elif defined(OS_WINDOWS)
+        Value (*const function)(Stack*) = (Value (*)(Stack*)) GetProcAddress(library->library.handle, symbol_name);
+    #else 
+        Value (*const function)(Stack*) = NULL;
     #endif
 
-    return NULL;
+    if (function == NULL) {
+        const Value exception = machine_exception(stack, "failed to load native function '%s' from library in function '%s'", symbol_name, __FUNCTION__);
+        free(symbol_name);
+        return exception;
+    }
+
+    free(symbol_name);
+    
+    result = machine_native(stack, library, function);
+    if (result.exception != NULL) {
+        return result.exception;
+    }
+
+    result = machine_list(stack, result.value, *stack->datastack);
+    if (result.exception != NULL) {
+        return result.exception;
+    } else {
+        *stack->datastack = result.value;
+        return NULL;
+    }
 }
 
 Value machine_instruction_run(Stack *stack) {
@@ -765,8 +958,7 @@ Value machine_instruction_run(Stack *stack) {
     InternalResult result;
 
     if (*stack->datastack == NULL) {
-        result = machine_exception(&frame, "stack underflow in function '%s'", __FUNCTION__);
-        return result.exception == NULL ? result.value : result.exception;
+        return machine_exception(&frame, "stack underflow in function '%s'", __FUNCTION__);
     }
 
     Value datastack = (*stack->datastack)->list.head;
@@ -774,8 +966,7 @@ Value machine_instruction_run(Stack *stack) {
     *stack->datastack = (*stack->datastack)->list.tail;
 
     if (*stack->datastack == NULL) {
-        result = machine_exception(&frame, "stack underflow in function '%s'", __FUNCTION__);
-        return result.exception == NULL ? result.value : result.exception;
+        return machine_exception(&frame, "stack underflow in function '%s'", __FUNCTION__);
     }
 
     Value callstack  = (*stack->datastack)->list.head;
@@ -783,8 +974,7 @@ Value machine_instruction_run(Stack *stack) {
     *stack->datastack = (*stack->datastack)->list.tail;
 
     if (*stack->datastack == NULL) {
-        result = machine_exception(&frame, "stack underflow in function '%s'", __FUNCTION__);
-        return result.exception == NULL ? result.value : result.exception;
+        return machine_exception(&frame, "stack underflow in function '%s'", __FUNCTION__);
     }
 
     Value dictionary = (*stack->datastack)->list.head;
@@ -869,46 +1059,12 @@ Value machine_instruction_run(Stack *stack) {
 
 /* ***** foreign function interface ***** */
 
-Value lime_register_function(Stack *stack, char *name, NativeFunction function) {
-    Stack frame = MACHINE_ALLOCATE(stack, NULL, NULL, NULL);
-    InternalResult result;
-
-    result = machine_symbol(&frame, (u8*) name, strlen(name));
-    
-    if (result.exception != NULL) {
-        return result.exception;
-    }
-    
-    frame.registers[0] = result.value;
-    result = machine_native(&frame, function);
-    
-    if (result.exception != NULL) {
-        return result.exception;
-    }
-    
-    frame.registers[1] = result.value;
-    result = machine_map_put(&frame, *frame.dictionary, frame.registers[0], frame.registers[1]);
-
-    if (result.exception != NULL) {
-        return result.exception;
-    }
-
-    *frame.dictionary = result.value;
-
-    return NULL;
-}
-
 Value lime_exception(Stack *stack, char *message, ...) {
-    InternalResult result;
-    char buffer[4096];
     va_list list;
-
     va_start(list, message);
-    vsnprintf(&buffer[0], sizeof(buffer) / sizeof(buffer[0]), message, list);
+    const Value result = machine_vexception(stack, message, &list);
     va_end(list);
-    
-    result = machine_string(stack, (u8*) &buffer[0], strlen(buffer));
-    return result.exception == NULL ? result.value : result.exception;
+    return result;
 }
 
 char *lime_value_type(Value value) {

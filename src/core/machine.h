@@ -1,10 +1,6 @@
 #ifndef MACHINE_H
 #define MACHINE_H
 
-#if defined(unix) || defined(__unix__) || defined(__unix)
-#include <dlfcn.h>
-#endif
-
 #include "../common/common.h"
 #include "value.h"
 
@@ -32,25 +28,27 @@ typedef struct {
     Value exception;
 } InternalResult;
 
-void machine_collect_garbage(Stack *stack);
+Value machine_collect_garbage(Stack *stack);
 
 InternalResult machine_allocate(Stack *stack, ValueType type, u64 additional);
 
 /* ***** internals ***** */
 
-InternalResult machine_exception(Stack *stack, char *message, ...);
+Value machine_exception(Stack *stack, char *message, ...);
 
 InternalResult machine_symbol(Stack *stack, u8 *bytes, u64 length);
 
 InternalResult machine_string(Stack *stack, u8 *bytes, u64 length);
 
-InternalResult machine_native(Stack *stack, NativeFunction function);
+InternalResult machine_native(Stack *stack, Value library, NativeFunction function);
 
 InternalResult machine_list(Stack *stack, Value head, Value tail);
 
 InternalResult machine_map(Stack *stack, u64 bucket_count);
 
 InternalResult machine_number(Stack *stack, double value);
+
+InternalResult machine_library(Stack *stack, char *path);
 
 InternalResult machine_boolean(Stack *stack, bool value);
 
@@ -76,11 +74,11 @@ Value machine_instruction_push(Stack *stack);
 
 Value machine_instruction_library(Stack *stack);
 
+Value machine_instruction_native(Stack *stack);
+
 Value machine_instruction_run(Stack *stack);
 
 /* ***** foreign function interface ***** */
-
-Value lime_register_function(Stack *stack, char *name, NativeFunction function);
 
 Value lime_exception(Stack *stack, char *message, ...);
 

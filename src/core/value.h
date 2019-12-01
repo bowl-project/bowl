@@ -10,7 +10,8 @@ typedef enum {
     MapValue     = 3,
     BooleanValue = 4,
     NumberValue  = 5,
-    StringValue  = 6
+    StringValue  = 6,
+    LibraryValue = 7
 } ValueType;
 
 struct stack;
@@ -55,8 +56,19 @@ typedef struct value {
         } map;
 
         struct {
+            struct value *library;
             NativeFunction function;
         } native;
+
+        struct {
+            #if defined(OS_UNIX)
+                void *handle;
+            #elif defined(OS_WINDOWS)
+                HINSTANCE handle;
+            #else
+                void *handle;
+            #endif
+        } library;
     };
 } *Value;
 
@@ -77,5 +89,7 @@ void value_show(Value value, char **buffer, u64 *length);
 u64 value_length(Value value);
 
 char *value_type(Value value);
+
+char *value_string_to_c_string(Value value);
 
 #endif

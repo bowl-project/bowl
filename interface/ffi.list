@@ -1,5 +1,4 @@
 {
-    lime_register_function;
     lime_exception;
     lime_value_type;
 };
