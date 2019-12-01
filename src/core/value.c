@@ -1,9 +1,9 @@
 #include "value.h"
 
-Value value_map_get_or_else(Value map, Value key, Value otherwise) {
+LimeValue lime_map_get_or_else(LimeValue map, LimeValue key, LimeValue otherwise) {
     const u64 index = value_hash(key) % map->map.capacity;
 
-    Value bucket = map->map.buckets[index];
+    LimeValue bucket = map->map.buckets[index];
 
     while (bucket != NULL) {
         if (value_equals(key, bucket->list.head)) {
@@ -16,47 +16,47 @@ Value value_map_get_or_else(Value map, Value key, Value otherwise) {
     return otherwise;
 }
 
-u64 value_hash(Value value) {
+u64 lime_value_hash(LimeValue value) {
     if (value == NULL) {
         return 31;
     } else if (value->hash == 0) {
         value->hash = 31;
 
         switch (value->type) {
-            case SymbolValue:
+            case LimeSymbolValue:
                 for (u64 i = 0, end = value->symbol.length; i < end; ++i) {
                     value->hash += pow(value->symbol.bytes[i] * 31, end - (i + 1));
                 }
                 break;
 
-            case NumberValue:
+            case LimeNumberValue:
                 value->hash += *((u64 *) (&value->number.value)) * 31;
                 break;
 
-            case BooleanValue:
+            case LimeBooleanValue:
                 value->hash = value->boolean.value ? 7 : 31;
                 break;
 
-            case StringValue:
+            case LimeStringValue:
                 for (u64 i = 0, end = value->string.length; i < end; ++i) {
                     value->hash += pow(value->string.bytes[i] * 31, end - (i + 1));
                 }
                 break;
 
-            case NativeValue:
-                value->hash += (u64) value->native.function * 31;
+            case LimeNativeValue:
+                value->hash += (u64) value->function.function * 31;
                 break;
 
-            case LibraryValue:
+            case LimeLibraryValue:
                 value->hash += (u64) value->library.handle * 31;
                 break;
 
-            case ListValue:
+            case LimeListValue:
                 value->hash += value_hash(value->list.head) * 31;
                 value->hash += value_hash(value->list.tail) * 31;
                 break;
 
-            case MapValue:
+            case LimeMapValue:
                 for (u64 i = 0, end = value->map.capacity; i < end; ++i) {
                     value->hash += value_hash(value->map.buckets[i]) * 31;
                 }
@@ -67,7 +67,7 @@ u64 value_hash(Value value) {
     return value->hash;
 }
 
-bool value_equals(Value a, Value b) {
+bool value_equals(LimeValue a, LimeValue b) {
     if (a == b) {
         return true;
     } else if (a == NULL || b == NULL) {
@@ -78,7 +78,7 @@ bool value_equals(Value a, Value b) {
         return false;
     } else {
         switch (a->type) {
-            case SymbolValue:
+            case LimeSymbolValue:
                 if (a->symbol.length != b->symbol.length) {
                     return false;
                 }
@@ -91,13 +91,13 @@ bool value_equals(Value a, Value b) {
 
                 return true;
 
-            case NumberValue:
+            case LimeNumberValue:
                 return a->number.value == b->number.value;
 
-            case BooleanValue:
+            case LimeBooleanValue:
                 return a->boolean.value == b->boolean.value;
 
-            case StringValue:
+            case LimeStringValue:
                 if (a->string.length != b->string.length) {
                     return false;
                 }
@@ -110,13 +110,13 @@ bool value_equals(Value a, Value b) {
 
                 return true;
 
-            case NativeValue:
-                return a->native.function == b->native.function;
+            case LimeNativeValue:
+                return a->function.function == b->function.function;
 
-            case LibraryValue:
+            case LimeLibraryValue:
                 return a->library.handle == b->library.handle;
 
-            case ListValue:
+            case LimeListValue:
                 if (a->list.length != b->list.length) {
                     return false;
                 }
@@ -132,19 +132,19 @@ bool value_equals(Value a, Value b) {
 
                 return true;
 
-            case MapValue:
+            case LimeMapValue:
                 if (a->map.length != b->map.length) {
                     return false;
                 }
 
-                return value_map_subset_of(a, b) && value_map_subset_of(b, a);
+                return lime_map_subset_of(a, b) && lime_map_subset_of(b, a);
         }
     }
 }
 
-bool value_map_subset_of(Value superset, Value subset) {
-    static struct value marker = {
-        .type = SymbolValue,
+bool lime_map_subset_of(LimeValue superset, LimeValue subset) {
+    static struct lime_value marker = {
+        .type = LimeSymbolValue,
         .location = NULL,
         .hash = 31,
         .symbol = {
@@ -157,10 +157,10 @@ bool value_map_subset_of(Value superset, Value subset) {
     }
 
     for (u64 i = 0, end = subset->map.capacity; i < end; ++i) {
-        Value bucket = subset->map.buckets[i];
+        LimeValue bucket = subset->map.buckets[i];
 
         while (bucket != NULL) {
-            const Value result = value_map_get_or_else(superset, bucket->list.head, &marker);
+            const LimeValue result = value_map_get_or_else(superset, bucket->list.head, &marker);
 
             bucket = bucket->list.tail;
 
@@ -177,35 +177,35 @@ bool value_map_subset_of(Value superset, Value subset) {
     return true;
 }
 
-u64 value_byte_size(Value value) {
+u64 lime_value_byte_size(LimeValue value) {
     if (value == NULL) {
         return 0;
     } else {
         switch (value->type) {
-            case SymbolValue:
-                return sizeof(struct value) + value->symbol.length * sizeof(u8);
-            case StringValue:
-                return sizeof(struct value) + value->string.length * sizeof(u8);
-            case MapValue:
-                return sizeof(struct value) + value->map.capacity * sizeof(Value);
+            case LimeSymbolValue:
+                return sizeof(struct lime_value) + value->symbol.length * sizeof(u8);
+            case LimeStringValue:
+                return sizeof(struct lime_value) + value->string.length * sizeof(u8);
+            case LimeMapValue:
+                return sizeof(struct lime_value) + value->map.capacity * sizeof(LimeValue);
             default:
-                return sizeof(struct value);
+                return sizeof(struct lime_value);
         }
     }
 }
 
-void value_dump(FILE *stream, Value value) {
+void lime_value_dump(FILE *stream, LimeValue value) {
     if (value == NULL) {
         fprintf(stream, "[ ]");
     } else {
         switch (value->type) {
-            case SymbolValue:
+            case LimeSymbolValue:
                 for (u64 i = 0, end = value->symbol.length; i < end; ++i) {
                     fprintf(stream, "%c", value->symbol.bytes[i]);
                 }
                 break;
 
-            case NumberValue:
+            case LimeNumberValue:
                 if (is_integer(value->number.value)) {
                     fprintf(stream, "%" PRId64, (u64) value->number.value);
                 } else {
@@ -213,7 +213,7 @@ void value_dump(FILE *stream, Value value) {
                 }
                 break;
             
-            case BooleanValue:
+            case LimeBooleanValue:
                 if (value->boolean.value) {
                     fprintf(stream, "true");
                 } else {
@@ -221,19 +221,19 @@ void value_dump(FILE *stream, Value value) {
                 }
                 break;
 
-            case NativeValue:
-                fprintf(stream, "function#0x%08" PRIX64, (u64) value->native.function);
+            case LimeNativeValue:
+                fprintf(stream, "function#0x%08" PRIX64, (u64) value->function.function);
                 break;
 
-            case LibraryValue:
+            case LimeLibraryValue:
                 fprintf(stream, "library#0x%08" PRIX64, (u64) value->library.handle);
                 break;
 
-            case ListValue:
+            case LimeListValue:
                 fprintf(stream, "[ ");
 
                 do {
-                    value_dump(stream, value->list.head);
+                    lime_value_dump(stream, value->list.head);
                     value = value->list.tail;
                     if (value != NULL) {
                         fprintf(stream, " ");
@@ -243,7 +243,7 @@ void value_dump(FILE *stream, Value value) {
                 fprintf(stream, " ]");
                 break;
 
-            case StringValue:
+            case LimeStringValue:
                 fprintf(stream, "\"");
 
                 for (u64 i = 0, end = value->string.length; i < end; ++i) {
@@ -258,12 +258,12 @@ void value_dump(FILE *stream, Value value) {
                 fprintf(stream, "\"");
                 break;
 
-            case MapValue:
+            case LimeMapValue:
                 fprintf(stream, "[ ");
 
                 bool first = true;
                 for (u64 i = 0, end = value->map.capacity; i < end; ++i) {
-                    Value bucket = value->map.buckets[i];
+                    LimeValue bucket = value->map.buckets[i];
 
                     if (!first && bucket != NULL) {
                         fprintf(stream, " ");
@@ -273,10 +273,10 @@ void value_dump(FILE *stream, Value value) {
 
                     while (bucket != NULL) {
                         fprintf(stream, "[ ");
-                        value_dump(stream, bucket->list.head);
+                        lime_value_dump(stream, bucket->list.head);
                         bucket = bucket->list.tail;
                         fprintf(stream, " ");
-                        value_dump(stream, bucket->list.head);
+                        lime_value_dump(stream, bucket->list.head);
                         bucket = bucket->list.tail;
                         fprintf(stream, " ]");
 
@@ -296,7 +296,7 @@ void value_dump(FILE *stream, Value value) {
     }
 }
 
-static bool value_print_buffer(char **buffer, u64 *length, u64 *capacity, char *message, ...) {
+static bool lime_value_printf_buffer(char **buffer, u64 *length, u64 *capacity, char *message, ...) {
     va_list list;
 
     va_start(list, message);
@@ -345,112 +345,112 @@ static bool value_print_buffer(char **buffer, u64 *length, u64 *capacity, char *
     }
 }
 
-static void value_to_string(Value value, char **buffer, u64 *length, u64 *capacity) {
+static void lime_value_show_buffer(LimeValue value, char **buffer, u64 *length, u64 *capacity) {
     if (value == NULL) {
-        value_print_buffer(buffer, length, capacity, "[ ]");
+        lime_value_printf_buffer(buffer, length, capacity, "[ ]");
     } else {
         switch (value->type) {
-            case SymbolValue:
+            case LimeSymbolValue:
                 for (u64 i = 0, end = value->symbol.length; i < end; ++i) {
-                    if (!value_print_buffer(buffer, length, capacity, "%c", value->symbol.bytes[i])) {
+                    if (!lime_value_printf_buffer(buffer, length, capacity, "%c", value->symbol.bytes[i])) {
                         return;
                     }
                 }
                 break;
 
-            case NumberValue:
+            case LimeNumberValue:
                 if (is_integer(value->number.value)) {
-                    if (!value_print_buffer(buffer, length, capacity, "%" PRId64, (u64) value->number.value)) {
+                    if (!lime_value_printf_buffer(buffer, length, capacity, "%" PRId64, (u64) value->number.value)) {
                         return;
                     }
                 } else {
-                    if (!value_print_buffer(buffer, length, capacity, "%f", value->number.value)) {
+                    if (!lime_value_printf_buffer(buffer, length, capacity, "%f", value->number.value)) {
                         return;
                     }
                 }
                 break;
             
-            case BooleanValue:
+            case LimeBooleanValue:
                 if (value->boolean.value) {
-                    if (!value_print_buffer(buffer, length, capacity, "true")) {
+                    if (!lime_value_printf_buffer(buffer, length, capacity, "true")) {
                         return;
                     }
                 } else {
-                    if (!value_print_buffer(buffer, length, capacity, "false")) {
+                    if (!lime_value_printf_buffer(buffer, length, capacity, "false")) {
                         return;
                     }
                 }
                 break;
 
-            case NativeValue:
-                if (!value_print_buffer(buffer, length, capacity, "function#0x%08" PRIX64, (u64) value->native.function)) {
+            case LimeNativeValue:
+                if (!lime_value_printf_buffer(buffer, length, capacity, "function#0x%08" PRIX64, (u64) value->function.function)) {
                     return;
                 }
                 break;
 
-            case LibraryValue:
-                if (!value_print_buffer(buffer, length, capacity, "library#0x%08" PRIX64, (u64) value->library.handle)) {
+            case LimeLibraryValue:
+                if (!lime_value_printf_buffer(buffer, length, capacity, "library#0x%08" PRIX64, (u64) value->library.handle)) {
                     return;
                 }
                 break;
 
-            case ListValue:
-                if (!value_print_buffer(buffer, length, capacity, "[ ")) {
+            case LimeListValue:
+                if (!lime_value_printf_buffer(buffer, length, capacity, "[ ")) {
                     return;
                 }
 
                 do {
-                    value_to_string(value->list.head, buffer, length, capacity);
+                    lime_value_show_buffer(value->list.head, buffer, length, capacity);
                     if (*buffer == NULL) {
                         return;
                     }
                     value = value->list.tail;
                     if (value != NULL) {
-                        if (!value_print_buffer(buffer, length, capacity, " ")) {
+                        if (!lime_value_printf_buffer(buffer, length, capacity, " ")) {
                             return;
                         }
                     }
                 } while (value != NULL);
 
-                if (!value_print_buffer(buffer, length, capacity, " ]")) {
+                if (!lime_value_printf_buffer(buffer, length, capacity, " ]")) {
                     return;
                 }
                 break;
 
-            case StringValue:
-                if (!value_print_buffer(buffer, length, capacity, "\"")) {
+            case LimeStringValue:
+                if (!lime_value_printf_buffer(buffer, length, capacity, "\"")) {
                     return;
                 }
 
                 for (u64 i = 0, end = value->string.length; i < end; ++i) {
                     char const* sequence = escape(value->string.bytes[i]);
                     if (sequence != NULL) {
-                        if (!value_print_buffer(buffer, length, capacity, "%s", sequence)) {
+                        if (!lime_value_printf_buffer(buffer, length, capacity, "%s", sequence)) {
                             return;
                         }
                     } else {
-                        if (!value_print_buffer(buffer, length, capacity, "%c", value->string.bytes[i])) {
+                        if (!lime_value_printf_buffer(buffer, length, capacity, "%c", value->string.bytes[i])) {
                             return;
                         }
                     }
                 }
 
-                if (!value_print_buffer(buffer, length, capacity, "\"")) {
+                if (!lime_value_printf_buffer(buffer, length, capacity, "\"")) {
                     return;
                 }
                 break;
 
-            case MapValue:
-                if (!value_print_buffer(buffer, length, capacity, "[ ")) {
+            case LimeMapValue:
+                if (!lime_value_printf_buffer(buffer, length, capacity, "[ ")) {
                     return;
                 }
 
                 bool first = true;
                 for (u64 i = 0, end = value->map.capacity; i < end; ++i) {
-                    Value bucket = value->map.buckets[i];
+                    LimeValue bucket = value->map.buckets[i];
 
                     if (!first && bucket != NULL) {
-                        if (!value_print_buffer(buffer, length, capacity, " ")) {
+                        if (!lime_value_printf_buffer(buffer, length, capacity, " ")) {
                             return;
                         }
                     } else if (bucket != NULL) {
@@ -458,32 +458,32 @@ static void value_to_string(Value value, char **buffer, u64 *length, u64 *capaci
                     }
 
                     while (bucket != NULL) {
-                        if (!value_print_buffer(buffer, length, capacity, "[ ")) {
+                        if (!lime_value_printf_buffer(buffer, length, capacity, "[ ")) {
                             return;
                         }
 
-                        value_to_string(bucket->list.head, buffer, length, capacity);
+                        lime_value_show_buffer(bucket->list.head, buffer, length, capacity);
                         if (*buffer == NULL) {
                             return;
                         }
 
                         bucket = bucket->list.tail;
-                        if (!value_print_buffer(buffer, length, capacity, " ")) {
+                        if (!lime_value_printf_buffer(buffer, length, capacity, " ")) {
                             return;
                         }
                         
-                        value_to_string(bucket->list.head, buffer, length, capacity);
+                        lime_value_show_buffer(bucket->list.head, buffer, length, capacity);
                         if (*buffer == NULL) {
                             return;
                         }
 
                         bucket = bucket->list.tail;
-                        if (!value_print_buffer(buffer, length, capacity, " ]")) {
+                        if (!lime_value_printf_buffer(buffer, length, capacity, " ]")) {
                             return;
                         }
 
                         if (bucket != NULL) {
-                            if (!value_print_buffer(buffer, length, capacity, " ")) {
+                            if (!lime_value_printf_buffer(buffer, length, capacity, " ")) {
                                 return;
                             }
                         }
@@ -491,11 +491,11 @@ static void value_to_string(Value value, char **buffer, u64 *length, u64 *capaci
                 }
 
                 if (first) {
-                    if (!value_print_buffer(buffer, length, capacity, "] map-from-list")) {
+                    if (!lime_value_printf_buffer(buffer, length, capacity, "] map-from-list")) {
                         return;
                     }
                 } else {
-                    if (!value_print_buffer(buffer, length, capacity, " ] map-from-list")) {
+                    if (!lime_value_printf_buffer(buffer, length, capacity, " ] map-from-list")) {
                         return;
                     }
                 }
@@ -504,27 +504,27 @@ static void value_to_string(Value value, char **buffer, u64 *length, u64 *capaci
     }
 }
 
-void value_show(Value value, char **buffer, u64 *length) {
+void lime_value_show(LimeValue value, char **buffer, u64 *length) {
     u64 capacity = 4096;
     *length = 0;
     *buffer = malloc(capacity * sizeof(char));
     if (*buffer != NULL) {
-        value_to_string(value, buffer, length, &capacity);
+        lime_value_show_buffer(value, buffer, length, &capacity);
     }
 }
 
-u64 value_length(Value value) {
+u64 lime_value_length(LimeValue value) {
     if (value == NULL) {
         return 0;
     } else {
         switch (value->type) {
-            case SymbolValue:
+            case LimeSymbolValue:
                 return value->symbol.length;
-            case ListValue:
+            case LimeListValue:
                 return value->list.length;
-            case MapValue:
+            case LimeMapValue:
                 return value->map.length;
-            case StringValue: 
+            case LimeStringValue: 
                 return value->string.length;
             default: 
                 return 0;
@@ -532,26 +532,26 @@ u64 value_length(Value value) {
     }
 }
 
-char *value_type(Value value) {
+char *lime_value_type(LimeValue value) {
     static char *types[] = {
-        [SymbolValue]  = "symbol",
-        [ListValue]    = "list",
-        [NativeValue]  = "function",
-        [MapValue]     = "map",
-        [BooleanValue] = "boolean",
-        [NumberValue]  = "number",
-        [StringValue]  = "string",
-        [LibraryValue]  = "library"
+        [LimeSymbolValue]  = "symbol",
+        [LimeListValue]    = "list",
+        [LimeNativeValue]  = "function",
+        [LimeMapValue]     = "map",
+        [LimeBooleanValue] = "boolean",
+        [LimeNumberValue]  = "number",
+        [LimeStringValue]  = "string",
+        [LimeLibraryValue]  = "library"
     };
     
     if (value == NULL) {
-        return types[ListValue];
+        return types[LimeListValue];
     } else {
         return types[value->type];
     }
 }
 
-char *value_string_to_c_string(Value value) {
+char *lime_string_to_null_terminated(LimeValue value) {
     char *path = malloc(value->string.length + 1);
     
     if (path != NULL) {
@@ -560,4 +560,130 @@ char *value_string_to_c_string(Value value) {
     }
 
     return path;
+}
+
+LimeValue lime_exception(LimeStack stack, char *message, ...) {
+    static struct lime_value exception = {
+        .type = LimeStringValue,
+        .location = NULL,
+        .hash = 0,
+        .string = {
+            .length = 63,
+            .bytes = "failed to format exception message in function '" __FUNCTION__ "'"
+        }
+    };
+    va_list list;
+
+    va_start(list, message);
+    const u64 required = vsnprintf(NULL, 0, message, list);
+    va_end(list);
+
+    LimeResult result = machine_allocate(stack, LimeStringValue, (required + 1) * sizeof(u8));
+
+    if (!result.failure) {
+        result.value->string.length = required;
+        va_start(list, message);
+        const u64 written = vsnprintf(&result.value->string.bytes[0], required + 1, message, list);
+        va_end(list);
+
+        if (written < 0 || written >= required + 1) {
+            return &exception;
+        } else {
+            return result.value;
+        }
+    } else {
+        return result.exception;
+    }
+}
+
+LimeResult lime_symbol(LimeStack stack, u8 *bytes, u64 length) {
+    LimeResult result = machine_allocate(stack, LimeSymbolValue, length * sizeof(u8));
+
+    if (!result.failure) {
+        result.value->symbol.length = length;
+        memcpy(result.value->symbol.bytes, bytes, length * sizeof(u8));
+        value_hash(result.value);    
+    }
+
+    return result;
+}
+
+LimeResult lime_string(LimeStack stack, u8 *bytes, u64 length) {
+    LimeResult result = machine_allocate(stack, LimeStringValue, length * sizeof(u8));
+
+    if (!result.failure) {
+        result.value->string.length = length;
+        memcpy(result.value->string.bytes, bytes, length * sizeof(u8));
+    }
+
+    return result;
+}
+
+LimeResult lime_function(LimeStack stack, LimeValue library, LimeFunction function) {
+    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
+    LimeResult result = machine_allocate(&frame, LimeNativeValue, 0);
+    
+    if (!result.failure) {
+        result.value->function.library = library;
+        result.value->function.function = function;
+    }
+
+    return result;
+}
+
+LimeResult lime_list(LimeStack stack, LimeValue head, LimeValue tail) {
+    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, head, tail, NULL);    
+    LimeResult result = machine_allocate(&frame, LimeListValue, 0);
+
+    if (!result.failure) {
+        result.value->list.head = frame.registers[0];
+        result.value->list.tail = frame.registers[1];
+
+        if (frame.registers[1] == NULL) {
+            result.value->list.length = 1;
+        } else {
+            result.value->list.length = frame.registers[1]->list.length + 1;
+        }
+    }
+
+    return result;
+}
+
+LimeResult lime_map(LimeStack stack, u64 capacity) {
+    LimeResult result = machine_allocate(stack, LimeMapValue, capacity * sizeof(LimeValue));
+
+    if (!result.failure) {
+        result.value->map.capacity = capacity;
+        result.value->map.length = 0;
+        
+        for (u64 i = 0; i < capacity; ++i) {
+            result.value->map.buckets[i] = NULL;
+        }
+    }
+    
+    return result;
+}
+
+LimeResult lime_number(LimeStack stack, double value) {
+    LimeResult result = machine_allocate(stack, LimeNumberValue, 0);
+
+    if (!result.failure) {
+        result.value->number.value = value;
+    }
+    
+    return result;
+}
+
+LimeResult lime_library(LimeStack stack, char *path) {
+    // TODO: library needs access to the garbage collection
+}
+
+LimeResult lime_boolean(LimeStack stack, bool value) {
+    LimeResult result = machine_allocate(stack, LimeBooleanValue, 0);
+    
+    if (!result.failure) {
+        result.value->boolean.value = value;
+    }
+
+    return result;
 }

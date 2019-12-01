@@ -1,87 +1,51 @@
 #ifndef MACHINE_H
 #define MACHINE_H
 
-#include "../common/common.h"
+#include "../common/utility.h"
+#include "../interface/lime.h"
+#include "../interface/api.h"
 #include "value.h"
 
 #define MACHINE_MAP_LOAD_FACTOR ((double) 0.75)
 #define MACHINE_PRINT_DATASTACK true
 
-typedef struct stack {
-    struct stack *previous;
-    Value registers[3];
-    Value *dictionary;
-    Value *callstack;
-    Value *datastack;
-} Stack;
-
-#define MACHINE_ALLOCATE(stack, a, b, c) {\
-    .previous = (stack),\
-    .registers = { (a), (b), (c) },\
-    .dictionary = (stack)->dictionary,\
-    .callstack = (stack)->callstack,\
-    .datastack = (stack)->datastack\
-}
-
 typedef struct {
-    Value value;
-    Value exception;
+    LimeValue value;
+    LimeValue exception;
 } InternalResult;
 
-Value machine_collect_garbage(Stack *stack);
+LimeValue machine_collect_garbage(LimeStack stack);
 
-InternalResult machine_allocate(Stack *stack, ValueType type, u64 additional);
+LimeResult machine_allocate(LimeStack stack, LimeValueType type, u64 additional);
 
 /* ***** internals ***** */
 
-Value machine_exception(Stack *stack, char *message, ...);
 
-InternalResult machine_symbol(Stack *stack, u8 *bytes, u64 length);
 
-InternalResult machine_string(Stack *stack, u8 *bytes, u64 length);
-
-InternalResult machine_native(Stack *stack, Value library, NativeFunction function);
-
-InternalResult machine_list(Stack *stack, Value head, Value tail);
-
-InternalResult machine_map(Stack *stack, u64 bucket_count);
-
-InternalResult machine_number(Stack *stack, double value);
-
-InternalResult machine_library(Stack *stack, char *path);
-
-InternalResult machine_boolean(Stack *stack, bool value);
-
-InternalResult machine_map_put(Stack *stack, Value map, Value key, Value value);
+InternalResult machine_map_put(LimeStack stack, LimeValue  map, LimeValue  key, LimeValue  value);
 
 /* ***** instructions ***** */
 
-Value machine_instruction_type(Stack *stack);
+LimeValue machine_instruction_type(LimeStack stack);
 
-Value machine_instruction_hash(Stack *stack);
+LimeValue machine_instruction_hash(LimeStack stack);
 
-Value machine_instruction_equals(Stack *stack);
+LimeValue machine_instruction_equals(LimeStack stack);
 
-Value machine_instruction_show(Stack *stack);
+LimeValue machine_instruction_show(LimeStack stack);
 
-Value machine_instruction_throw(Stack *stack);
+LimeValue machine_instruction_throw(LimeStack stack);
 
-Value machine_instruction_length(Stack *stack);
+LimeValue machine_instruction_length(LimeStack stack);
 
-Value machine_instruction_nil(Stack *stack);
+LimeValue machine_instruction_nil(LimeStack stack);
 
-Value machine_instruction_push(Stack *stack);
+LimeValue machine_instruction_push(LimeStack stack);
 
-Value machine_instruction_library(Stack *stack);
+LimeValue machine_instruction_library(LimeStack stack);
 
-Value machine_instruction_native(Stack *stack);
+LimeValue machine_instruction_native(LimeStack stack);
 
-Value machine_instruction_run(Stack *stack);
-
-/* ***** foreign function interface ***** */
-
-Value lime_exception(Stack *stack, char *message, ...);
-
-char *lime_value_type(Value value);
+LimeValue machine_instruction_run(LimeStack stack);
 
 #endif

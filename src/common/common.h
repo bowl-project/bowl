@@ -7,7 +7,6 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <math.h>
 #include <inttypes.h>
 
 typedef uint64_t u64;
@@ -20,14 +19,6 @@ typedef int32_t s32;
 typedef int16_t s16;
 typedef int8_t  s8;
 
-#ifndef MAX
-#define MAX(x, y) ((x) < (y) ? (y) : (x))
-#endif
-
-#ifndef MIN
-#define MIN(x, y) ((y) > (x) ? (y) : (x))
-#endif
-
 #if defined(unix) || defined(__unix__) || defined(__unix)
 #define OS_UNIX
 #elif defined(_WIN32) || defined(_WIN64)
@@ -39,9 +30,5 @@ typedef int8_t  s8;
 #elif defined(OS_WINDOWS)
 #include <windows.h>
 #endif
-
-bool is_integer(double value);
-
-char *escape(char c);
 
 #endif
