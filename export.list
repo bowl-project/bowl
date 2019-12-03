@@ -1,0 +1,22 @@
+{
+    lime_map_get_or_else;
+    lime_map_subset_of;
+    lime_map_put;
+    lime_string_to_null_terminated;
+    lime_value_hash;
+    lime_value_equals;
+    lime_value_byte_size;
+    lime_value_dump;
+    lime_value_show;
+    lime_value_length;
+    lime_value_type;
+    lime_exception;
+    lime_symbol;
+    lime_string;
+    lime_function;
+    lime_list;
+    lime_map;
+    lime_number;
+    lime_library;
+    lime_boolean;
+};
