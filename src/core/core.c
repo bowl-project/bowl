@@ -822,18 +822,16 @@ LimeResult lime_library(LimeStack stack, char *path) {
         return result;
     }
 
+    // It is important to add the library to the list of weak references before any
+    // action is performed that may require us to close the handle again (e.g. in
+    // case of an exception when calling the 'lime_module_initialize' function).
+    // By adding the library value to the list of weak references the garbage collector
+    // is able to close the library automatically if it is no longer needed. 
     result = gc_add_library(result.value);
     if (result.failure) {
         return result;
     }
 
-    // it is important to open the shared library last, otherwise there would be a case where
-    // we have to close the library (e.g. in case of a 'out of memory' exception). This may 
-    // fail again, thus leading to a point where we need to throw an exception which reports 
-    // this failure. However, the user isn't able to react in an appropriate way to this
-    // exception, because we are in the middle of the 'library' constructor and there is
-    // no reference to the handle available to the user. That is, the user is not able to 
-    // close the library and the internal reference counter of it will never reach zero.
     #if defined(OS_UNIX)
         result.value->library.handle = dlopen(path, RTLD_LAZY);
     #elif defined(OS_WINDOWS)
@@ -846,6 +844,28 @@ LimeResult lime_library(LimeStack stack, char *path) {
 
     if (result.value->library.handle == NULL) {
         result.exception = lime_exception(stack, "failed to load library '%s' in function '%s'", path, __FUNCTION__);
+        result.failure = true;
+        return result;
+    }
+
+    #if defined(OS_UNIX)
+        const LimeFunction initialize = (LimeFunction) dlsym(result.value->library.handle, "lime_module_initialize");
+    #elif defined(OS_WINDOWS)
+        const LimeFunction initialize = (LimeFunction) GetProcAddress(result.value->library.handle, "lime_module_initialize");
+    #else 
+        const LimeFunction initialize = NULL;
+    #endif
+  
+    if (initialize == NULL) {
+        // the library handle is closed by the garbage collector
+        result.exception = lime_exception(stack, "failed to load library '%s' in function '%s'", path, __FUNCTION__);
+        result.failure = true;
+        return result;
+    }
+
+    LimeValue exception = initialize(stack);
+    if (exception != NULL) {
+        result.exception = exception;
         result.failure = true;
         return result;
     }

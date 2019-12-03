@@ -2,6 +2,7 @@
 #define API_H
 
 #include "lime.h"
+#include "module.h"
 
 /**
  * A helper data structure that allows to return either a result value or an

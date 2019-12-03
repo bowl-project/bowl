@@ -110,6 +110,11 @@ LimeValue lime_collect_garbage(LimeStack stack) {
             previous_libraries_size = new_libraries_size;
             new_libraries_size = i + 1;
 
+            // TODO: 
+            // - call 'lime_module_finalize'
+            // - remember that it was already called
+            // - if the dlclose fails, don't call 'lime_module_finalize' again for this module
+
             // this value resides inside the dirty heap
             if (value->location == NULL) {
                 // this value was not relocated by the garbage collector and thus must be garbage

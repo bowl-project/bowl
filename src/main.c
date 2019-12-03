@@ -8,48 +8,12 @@ static void fail(LimeValue exception) {
     exit(EXIT_FAILURE);
 }
 
-static void enter(LimeStack stack, char *name, LimeFunction function) {
-    LimeResult result;
-
-    // enter symbol
-    result = lime_symbol(stack, (u8*) name, strlen(name));
-    
-    if (result.failure) {
-        fail(result.exception);
-    }
-    
-    stack->registers[0] = result.value;
-    result = lime_function(stack, NULL, function);
-    
-    if (result.failure) {
-        fail(result.exception);
-    }
-    
-    stack->registers[1] = result.value;
-    result = lime_map_put(stack, *stack->dictionary, stack->registers[0], stack->registers[1]);
-
-    if (result.failure) {
-        fail(result.exception);
-    }
-
-    *stack->dictionary = result.value;
-}
-
 int main(int argc, char *argv[]) {
     // TODO: predefined list of static allocated exceptions
     // TODO: if there would be a "init" and "shutdown" function in each library, we could prevent fetching the "kernel_run"
-    LimeResult result;
-
     LimeValue callstack = NULL;
     LimeValue datastack = NULL;
     LimeValue dictionary = NULL;
-
-    result = lime_map(NULL, 16);
-    if (result.failure) {
-        fail(result.exception);
-    } else {
-        dictionary = result.value;
-    }
 
     LimeStackFrame frame = {
         .previous = NULL,
@@ -60,7 +24,7 @@ int main(int argc, char *argv[]) {
     };
 
     for (int i = argc - 1; i > 0; --i) {
-        result = lime_symbol(&frame, (u8*) argv[i], strlen(argv[i]));
+        LimeResult result = lime_symbol(&frame, (u8*) argv[i], strlen(argv[i]));
 
         if (result.failure) {
             fail(result.exception);
@@ -75,54 +39,93 @@ int main(int argc, char *argv[]) {
         callstack = result.value;
     }
 
-    // bootstrap datastack
-    frame.registers[0] = datastack;
+    LimeValue exception = lime_module_initialize(&frame);
+    
+    if (exception == NULL) {
+        exception = lime_module_finalize(NULL);
+    }
+     
+    if (exception == NULL) {
+        return EXIT_SUCCESS;
+    } else {
+        fail(exception);
+        return EXIT_FAILURE;
+    }
+}
 
-    result = lime_list(&frame, dictionary, datastack);
+LimeValue lime_module_initialize(LimeStack stack) {
+    static struct lime_value marker = {
+        .type = LimeSymbolValue,
+        .location = NULL,
+        .hash = 31,
+        .symbol = {
+            .length = 0
+        }
+    };
+    
+    static struct lime_value run_symbol = {
+        .type = LimeSymbolValue,
+        .location = NULL,
+        .hash = 31,
+        .symbol = {
+            .length = 3,
+            .bytes = "run"
+        }
+    };
+
+    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, NULL, NULL, NULL);
+
+    // set up the dictionary
+    LimeResult result = lime_map(NULL, 16);
+    if (result.failure) {
+        return result.exception;
+    }
+        
+    *frame.dictionary = result.value;
+
+    // set up the datastack
+    frame.registers[0] = *frame.datastack;
+    result = lime_list(&frame, *frame.dictionary, *frame.datastack);
     
     if (result.failure) {
-        fail(result.exception);
+        return result.exception;
     }
 
-    datastack = result.value;
-    result = lime_list(&frame, callstack, datastack);
+    *frame.datastack = result.value;
+    result = lime_list(&frame, *frame.callstack, *frame.datastack);
 
     if (result.failure) {
-        fail(result.exception);
+        return result.exception;
     }
 
-    datastack = result.value;
-    result = lime_list(&frame, frame.registers[0], datastack);
+    *frame.datastack = result.value;
+    result = lime_list(&frame, frame.registers[0], *frame.datastack);
     
     if (result.failure) {
-        fail(result.exception);
+        return result.exception;
     }
 
-    datastack = result.value;
+    *frame.datastack = result.value;
 
     // bootstrap the kernel
     result = lime_library(&frame, "./../lime-kernel/kernel.so");
     
     if (result.failure) {
-        fail(result.exception);
+        return result.exception;
     }
 
-    const LimeFunction function = dlsym(result.value->library.handle, "kernel_run");
-    result = lime_function(&frame, result.value, function);
+    // the function 'run' should be present in the dictionary by now
+    const LimeValue run = lime_map_get_or_else(*frame.dictionary, &run_symbol, &marker);
 
-    if (result.failure) {
-        fail(result.exception);
-    }
-
-    function(&frame);
-
-    // run garbage collector a last time to clean things up (e.g. native libraries)
-    LimeValue exception = lime_collect_garbage(NULL);
-
-    if (exception != NULL) {
-        fail(exception);
-        return EXIT_FAILURE;
+    if (run == &marker) {
+        return lime_exception(&frame, "failed to initialize module 'kernel' in function '%s'", __FUNCTION__);
     } else {
-        return EXIT_SUCCESS;
+        // bootstrap the first instance 
+        return run->function.function(&frame);
     }
+}
+
+LimeValue lime_module_finalize(LimeStack stack) {
+    // run garbage collector a last time to clean things up (e.g. native libraries)
+    return lime_collect_garbage(NULL);
 }
