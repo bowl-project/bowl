@@ -1,34 +1,34 @@
 #include "main.h"
 
-static void fail(Value exception) {
+static void fail(LimeValue exception) {
     fprintf(stderr, "[exception] ");
-    value_dump(stderr, exception);
+    lime_value_dump(stderr, exception);
     fprintf(stderr, "\n");
     fflush(stderr);
     exit(EXIT_FAILURE);
 }
 
-static void enter(Stack *stack, char *name, NativeFunction function) {
-    InternalResult result;
+static void enter(LimeStack stack, char *name, LimeFunction function) {
+    LimeResult result;
 
     // enter symbol
-    result = machine_symbol(stack, (u8*) name, strlen(name));
+    result = lime_symbol(stack, (u8*) name, strlen(name));
     
-    if (result.exception != NULL) {
+    if (result.failure) {
         fail(result.exception);
     }
     
     stack->registers[0] = result.value;
-    result = machine_native(stack, NULL, function);
+    result = lime_function(stack, NULL, function);
     
-    if (result.exception != NULL) {
+    if (result.failure) {
         fail(result.exception);
     }
     
     stack->registers[1] = result.value;
-    result = machine_map_put(stack, *stack->dictionary, stack->registers[0], stack->registers[1]);
+    result = lime_map_put(stack, *stack->dictionary, stack->registers[0], stack->registers[1]);
 
-    if (result.exception != NULL) {
+    if (result.failure) {
         fail(result.exception);
     }
 
@@ -36,20 +36,22 @@ static void enter(Stack *stack, char *name, NativeFunction function) {
 }
 
 int main(int argc, char *argv[]) {
-    InternalResult result;
+    // TODO: predefined list of static allocated exceptions
+    // TODO: if there would be a "init" and "shutdown" function in each library, we could prevent fetching the "kernel_run"
+    LimeResult result;
 
-    Value callstack = NULL;
-    Value datastack = NULL;
-    Value dictionary = NULL;
+    LimeValue callstack = NULL;
+    LimeValue datastack = NULL;
+    LimeValue dictionary = NULL;
 
-    result = machine_map(NULL, 16);
-    if (result.exception != NULL) {
+    result = lime_map(NULL, 16);
+    if (result.failure) {
         fail(result.exception);
     } else {
         dictionary = result.value;
     }
 
-    Stack frame = {
+    LimeStackFrame frame = {
         .previous = NULL,
         .registers = { NULL, NULL, NULL },
         .callstack = &callstack,
@@ -57,28 +59,16 @@ int main(int argc, char *argv[]) {
         .dictionary = &dictionary
     };
 
-    enter(&frame, "run", machine_instruction_run);
-    enter(&frame, "type", machine_instruction_type);
-    enter(&frame, "hash", machine_instruction_hash);
-    enter(&frame, "equals", machine_instruction_equals);
-    enter(&frame, "length", machine_instruction_length);
-    enter(&frame, "throw", machine_instruction_throw);
-    enter(&frame, "show", machine_instruction_show);
-    enter(&frame, "nil", machine_instruction_nil);
-    enter(&frame, "push", machine_instruction_push);
-    enter(&frame, "library", machine_instruction_library);
-    enter(&frame, "native", machine_instruction_native);
-
     for (int i = argc - 1; i > 0; --i) {
-        result = machine_symbol(&frame, (u8*) argv[i], strlen(argv[i]));
+        result = lime_symbol(&frame, (u8*) argv[i], strlen(argv[i]));
 
-        if (result.exception != NULL) {
+        if (result.failure) {
             fail(result.exception);
         }
 
-        result = machine_list(&frame, result.value, callstack);
+        result = lime_list(&frame, result.value, callstack);
         
-        if (result.exception != NULL) {
+        if (result.failure) {
             fail(result.exception);
         }
 
@@ -88,33 +78,46 @@ int main(int argc, char *argv[]) {
     // bootstrap datastack
     frame.registers[0] = datastack;
 
-    result = machine_list(&frame, dictionary, datastack);
+    result = lime_list(&frame, dictionary, datastack);
     
-    if (result.exception != NULL) {
+    if (result.failure) {
         fail(result.exception);
     }
 
     datastack = result.value;
-    result = machine_list(&frame, callstack, datastack);
+    result = lime_list(&frame, callstack, datastack);
 
-    if (result.exception != NULL) {
+    if (result.failure) {
         fail(result.exception);
     }
 
     datastack = result.value;
-    result = machine_list(&frame, frame.registers[0], datastack);
+    result = lime_list(&frame, frame.registers[0], datastack);
     
-    if (result.exception != NULL) {
+    if (result.failure) {
         fail(result.exception);
     }
 
     datastack = result.value;
 
-    // run the machine using the bootstrapped datastack
-    const Value exception = machine_instruction_run(&frame);
+    // bootstrap the kernel
+    result = lime_library(&frame, "./../lime-kernel/kernel.so");
+    
+    if (result.failure) {
+        fail(result.exception);
+    }
+
+    const LimeFunction function = dlsym(result.value->library.handle, "kernel_run");
+    result = lime_function(&frame, result.value, function);
+
+    if (result.failure) {
+        fail(result.exception);
+    }
+
+    function(&frame);
 
     // run garbage collector a last time to clean things up (e.g. native libraries)
-    machine_collect_garbage(NULL);
+    LimeValue exception = lime_collect_garbage(NULL);
 
     if (exception != NULL) {
         fail(exception);

@@ -18,6 +18,13 @@ typedef struct {
     };
 } LimeResult;
 
+/**
+ * Triggers a run of the garbage collector. 
+ * @param stack The current stack of the environment.
+ * @return Either an exception or 'NULL' if no exception occurred
+ */
+extern LimeValue lime_collect_garbage(LimeStack stack);
+
 /** 
  * Retrieves the value from the provided map which is associated with the specified
  * key or returns a default value if there is no value associated with the key.
@@ -35,6 +42,19 @@ extern LimeValue lime_map_get_or_else(LimeValue map, LimeValue key, LimeValue ot
  * @return Whether or not the second argument is a subset of the first one.
  */
 extern bool lime_map_subset_of(LimeValue superset, LimeValue subset);
+
+/**
+ * Inserts the value at the specified key in the provided map. 
+ * If there is already a value associated with this key, the old value will 
+ * be overwritten by the new one.
+ * @param stack The current stack of the environment.
+ * @param map The map in which the value should be inserted.
+ * @param key The key which should be associated with the value.
+ * @param value The value which should be inserted.
+ * @return A copy of the provided map where the specified key is associated 
+ * with the value.
+ */
+extern LimeResult lime_map_put(LimeStack stack, LimeValue map, LimeValue key, LimeValue value);
 
 /**
  * Generates a null-terminated string of the provided value by allocating
