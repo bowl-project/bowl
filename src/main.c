@@ -66,7 +66,7 @@ LimeValue lime_module_initialize(LimeStack stack) {
     static struct lime_value run_symbol = {
         .type = LimeSymbolValue,
         .location = NULL,
-        .hash = 31,
+        .hash = 0,
         .symbol = {
             .length = 3,
             .bytes = "run"
@@ -76,36 +76,12 @@ LimeValue lime_module_initialize(LimeStack stack) {
     LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, NULL, NULL, NULL);
 
     // set up the dictionary
-    LimeResult result = lime_map(NULL, 16);
+    LimeResult result = lime_map(&frame, 16);
     if (result.failure) {
         return result.exception;
     }
         
     *frame.dictionary = result.value;
-
-    // set up the datastack
-    frame.registers[0] = *frame.datastack;
-    result = lime_list(&frame, *frame.dictionary, *frame.datastack);
-    
-    if (result.failure) {
-        return result.exception;
-    }
-
-    *frame.datastack = result.value;
-    result = lime_list(&frame, *frame.callstack, *frame.datastack);
-
-    if (result.failure) {
-        return result.exception;
-    }
-
-    *frame.datastack = result.value;
-    result = lime_list(&frame, frame.registers[0], *frame.datastack);
-    
-    if (result.failure) {
-        return result.exception;
-    }
-
-    *frame.datastack = result.value;
 
     // bootstrap the kernel
     result = lime_library(&frame, "./../lime-kernel/kernel.so");
@@ -113,6 +89,30 @@ LimeValue lime_module_initialize(LimeStack stack) {
     if (result.failure) {
         return result.exception;
     }
+
+    // remember a reference of the native library to avoid it from being closed
+    frame.registers[0] = result.value;
+
+    // set up the datastack
+    result = lime_list(&frame, *frame.dictionary, *frame.datastack);
+    
+    if (result.failure) {
+        return result.exception;
+    }
+
+    result = lime_list(&frame, *frame.callstack, result.value);
+
+    if (result.failure) {
+        return result.exception;
+    }
+
+    result = lime_list(&frame, *frame.datastack, result.value);
+    
+    if (result.failure) {
+        return result.exception;
+    }
+
+    *frame.datastack = result.value;
 
     // the function 'run' should be present in the dictionary by now
     const LimeValue run = lime_map_get_or_else(*frame.dictionary, &run_symbol, &marker);

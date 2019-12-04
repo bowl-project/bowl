@@ -20,6 +20,14 @@ typedef struct {
 } LimeResult;
 
 /**
+ * Prints the given value after the provided message.
+ * @param value The value to print.
+ * @param message The message to print.
+ * @param ... The data which is used to format the message.
+ */
+extern void lime_value_debug(LimeValue value, char *message, ...);
+
+/**
  * Triggers a run of the garbage collector. 
  * @param stack The current stack of the environment.
  * @return Either an exception or 'NULL' if no exception occurred

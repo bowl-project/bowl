@@ -67,7 +67,6 @@ static LimeResult lime_map_insert(LimeStack stack, LimeValue bucket, LimeValue k
 
 LimeValue lime_map_get_or_else(LimeValue map, LimeValue key, LimeValue otherwise) {
     const u64 index = lime_value_hash(key) % map->map.capacity;
-
     LimeValue bucket = map->map.buckets[index];
 
     while (bucket != NULL) {
@@ -134,7 +133,7 @@ LimeResult lime_map_put(LimeStack stack, LimeValue map, LimeValue key, LimeValue
     // insert the new key-value pair
     const u64 index = lime_value_hash(arguments.registers[1]) % capacity;
     const u64 length = lime_value_length(variables.registers[0]->map.buckets[index]);
-    
+
     result = lime_map_insert(
         &variables, 
         variables.registers[0]->map.buckets[index], 
@@ -332,6 +331,17 @@ u64 lime_value_byte_size(LimeValue value) {
                 return sizeof(struct lime_value);
         }
     }
+}
+
+void lime_value_debug(LimeValue value, char *message, ...) {
+    va_list list;
+    printf("[debug] ");
+    va_start(list, message);
+    vprintf(message, list);
+    va_end(list);
+    lime_value_dump(stdout, value);
+    printf("\n");
+    fflush(stdout);
 }
 
 void lime_value_dump(FILE *stream, LimeValue value) {
@@ -815,12 +825,17 @@ LimeResult lime_number(LimeStack stack, double value) {
 }
 
 LimeResult lime_library(LimeStack stack, char *path) {
+    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, NULL, NULL, NULL);
     LimeResult result;
 
-    result = gc_allocate(stack, LimeLibraryValue, 0);
+    result = gc_allocate(&frame, LimeLibraryValue, 0);
     if (result.failure) {
         return result;
     }
+
+    // The library value has to be secured in a register, otherwise the module's
+    // initialization function may destroy it (and close the library handle)
+    frame.registers[0] = result.value;
 
     // It is important to add the library to the list of weak references before any
     // action is performed that may require us to close the handle again (e.g. in
@@ -843,7 +858,7 @@ LimeResult lime_library(LimeStack stack, char *path) {
     #endif
 
     if (result.value->library.handle == NULL) {
-        result.exception = lime_exception(stack, "failed to load library '%s' in function '%s'", path, __FUNCTION__);
+        result.exception = lime_exception(&frame, "failed to load library '%s' in function '%s'", path, __FUNCTION__);
         result.failure = true;
         return result;
     }
@@ -858,12 +873,12 @@ LimeResult lime_library(LimeStack stack, char *path) {
   
     if (initialize == NULL) {
         // the library handle is closed by the garbage collector
-        result.exception = lime_exception(stack, "failed to load library '%s' in function '%s'", path, __FUNCTION__);
+        result.exception = lime_exception(&frame, "failed to load library '%s' in function '%s'", path, __FUNCTION__);
         result.failure = true;
         return result;
     }
 
-    LimeValue exception = initialize(stack);
+    LimeValue exception = initialize(&frame);
     if (exception != NULL) {
         result.exception = exception;
         result.failure = true;
