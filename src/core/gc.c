@@ -10,16 +10,6 @@ static GarbageCollectorLibraryEntry *gc_libraries = NULL;
 static u64 gc_libraries_capacity = 0;
 static u64 gc_libraries_length = 0;
 
-static struct lime_value gc_library_finalize_exception = {
-    .type = LimeStringValue,
-    .location = NULL,
-    .hash = 365473802495556352,
-    .symbol = {
-        .length = 26,
-        .bytes = "failed to finalize library"
-    }
-};
-
 static inline bool gc_is_managed(LimeValue value) {
     // only objects that resize inside the 'gc_heap_src' are managed by the garbage collector
     return (u64) value >= (u64) gc_heap_src && (u64) value < (u64) (gc_heap_src + gc_heap_size);
