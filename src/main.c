@@ -9,8 +9,6 @@ static void fail(LimeValue exception) {
 }
 
 int main(int argc, char *argv[]) {
-    // TODO: predefined list of static allocated exceptions
-    // TODO: if there would be a "init" and "shutdown" function in each library, we could prevent fetching the "kernel_run"
     LimeValue callstack = NULL;
     LimeValue datastack = NULL;
     LimeValue dictionary = NULL;
@@ -39,10 +37,10 @@ int main(int argc, char *argv[]) {
         callstack = result.value;
     }
 
-    LimeValue exception = lime_module_initialize(&frame);
+    LimeValue exception = lime_module_initialize(&frame, NULL);
     
     if (exception == NULL) {
-        exception = lime_module_finalize(NULL);
+        exception = lime_module_finalize(&frame, NULL);
     }
      
     if (exception == NULL) {
@@ -53,16 +51,7 @@ int main(int argc, char *argv[]) {
     }
 }
 
-LimeValue lime_module_initialize(LimeStack stack) {
-    static struct lime_value marker = {
-        .type = LimeSymbolValue,
-        .location = NULL,
-        .hash = 31,
-        .symbol = {
-            .length = 0
-        }
-    };
-    
+LimeValue lime_module_initialize(LimeStack stack, LimeValue library) {
     static struct lime_value run_symbol = {
         .type = LimeSymbolValue,
         .location = NULL,
@@ -115,9 +104,9 @@ LimeValue lime_module_initialize(LimeStack stack) {
     *frame.datastack = result.value;
 
     // the function 'run' should be present in the dictionary by now
-    const LimeValue run = lime_map_get_or_else(*frame.dictionary, &run_symbol, &marker);
+    const LimeValue run = lime_map_get_or_else(*frame.dictionary, &run_symbol, lime_sentinel_value);
 
-    if (run == &marker) {
+    if (run == lime_sentinel_value) {
         return lime_exception(&frame, "failed to initialize module 'kernel' in function '%s'", __FUNCTION__);
     } else {
         // bootstrap the first instance 
@@ -125,7 +114,7 @@ LimeValue lime_module_initialize(LimeStack stack) {
     }
 }
 
-LimeValue lime_module_finalize(LimeStack stack) {
+LimeValue lime_module_finalize(LimeStack stack, LimeValue library) {
     // run garbage collector a last time to clean things up (e.g. native libraries)
     return lime_collect_garbage(NULL);
 }

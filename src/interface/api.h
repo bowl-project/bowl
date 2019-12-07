@@ -20,6 +20,39 @@ typedef struct {
 } LimeResult;
 
 /**
+ * A preallocated sentinel value which can be used for any purpose where it is
+ * required to pass dummy data that is not used in any meaningful way.
+ * 
+ * A common example of this value's application is its use as the default argument
+ * for the 'lime_map_get_or_else' function to check if the provided key was present
+ * in the map.
+ */
+extern const LimeValue lime_sentinel_value;
+
+/**
+ * A preallocated string exception which is used whenever the finalization of
+ * a native library failed.
+ */
+extern const LimeValue lime_exception_finalization_failure;
+
+/**
+ * A preallocated string exception which is used whenever there is not enough 
+ * heap memory available.
+ */
+extern const LimeValue lime_exception_out_of_heap;
+
+/**
+ * Enters the provided function in the dictionary of the current environment.
+ * @param stack The current stack of the environment.
+ * @param name The name of the function.
+ * @param library The library value to which the function belongs. This value may
+ * be 'NULL' if the function belongs to no native library.
+ * @param function The function which should be entered.
+ * @return Either an exception or 'NULL' if no exception occurred.
+ */
+extern LimeValue lime_register_function(LimeStack stack, char *name, LimeValue library, LimeFunction function);
+
+/**
  * Prints the given value after the provided message.
  * @param value The value to print.
  * @param message The message to print.
@@ -30,7 +63,7 @@ extern void lime_value_debug(LimeValue value, char *message, ...);
 /**
  * Triggers a run of the garbage collector. 
  * @param stack The current stack of the environment.
- * @return Either an exception or 'NULL' if no exception occurred
+ * @return Either an exception or 'NULL' if no exception occurred.
  */
 extern LimeValue lime_collect_garbage(LimeStack stack);
 
@@ -39,7 +72,8 @@ extern LimeValue lime_collect_garbage(LimeStack stack);
  * key or returns a default value if there is no value associated with the key.
  * @param map A value of type 'map'.
  * @param key An arbitrary value which represents the key.
- * @param otherwise An arbitrary default value.
+ * @param otherwise An arbitrary default value. The 'lime_sentinel_value' may be used
+ * to check if there is a value associated with the provided key.
  * @return Either the associated value or the default value.
  */
 extern LimeValue lime_map_get_or_else(LimeValue map, LimeValue key, LimeValue otherwise);
@@ -74,6 +108,13 @@ extern LimeResult lime_map_put(LimeStack stack, LimeValue map, LimeValue key, Li
  * provided value.
  */
 extern char *lime_string_to_null_terminated(LimeValue value);
+
+/**
+ * Checks if the specified library is currently loaded.
+ * @param path The file path to the library.
+ * @return Whether or not the specified library is currently loaded.
+ */
+extern bool lime_library_is_loaded(char *path);
 
 /**
  * Computes the hash of the provided value.

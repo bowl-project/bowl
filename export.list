@@ -3,6 +3,11 @@
     lime_map_subset_of;
     lime_map_put;
     lime_string_to_null_terminated;
+    lime_exception_out_of_heap;
+    lime_exception_finalization_failure;
+    lime_library_is_loaded;
+    lime_sentinel_value;
+    lime_register_function;
     lime_value_hash;
     lime_value_equals;
     lime_value_debug;

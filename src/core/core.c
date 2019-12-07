@@ -1,5 +1,42 @@
 #include "core.h"
 
+static struct lime_value lime_exception_out_of_heap_internal = {
+    .type = LimeStringValue,
+    .location = NULL,
+    .hash = 0,
+    .symbol = {
+        .length = 18,
+        .bytes = "out of heap memory"
+    }
+};
+
+static struct lime_value lime_exception_finalization_failure_internal = {
+    .type = LimeStringValue,
+    .location = NULL,
+    .hash = 0,
+    .symbol = {
+        .length = 19,
+        .bytes = "finalization failed"
+    }
+};
+
+static struct lime_value lime_sentinel_value_internal = {
+    .type = LimeStringValue,
+    .location = NULL,
+    .hash = 0,
+    .symbol = {
+        .length = 0,
+        .bytes = ""
+    }
+};
+
+const LimeValue lime_exception_out_of_heap = &lime_exception_out_of_heap_internal;
+
+const LimeValue lime_exception_finalization_failure = &lime_exception_finalization_failure_internal;
+
+const LimeValue lime_sentinel_value = &lime_sentinel_value_internal;
+
+
 static LimeResult lime_map_insert(LimeStack stack, LimeValue bucket, LimeValue key, LimeValue value) {
     LimeStackFrame arguments = LIME_ALLOCATE_STACK_FRAME(stack, bucket, key, value);
     LimeStackFrame variables = LIME_ALLOCATE_STACK_FRAME(&arguments, NULL, NULL, NULL);
@@ -63,6 +100,34 @@ static LimeResult lime_map_insert(LimeStack stack, LimeValue bucket, LimeValue k
 
     result.value = variables.registers[0];
     return result;
+}
+
+LimeValue lime_register_function(LimeStack stack, char *name, LimeValue library, LimeFunction function) {
+    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, NULL, NULL, NULL);
+    LimeResult result;
+
+    result = lime_symbol(&frame, (u8*) name, strlen(name));
+
+    if (result.failure) {
+        return result.exception;
+    }
+
+    frame.registers[0] = result.value;
+    result = lime_function(&frame, library, function);
+
+    if (result.failure) {
+        return result.exception;
+    }
+
+    result = lime_map_put(&frame, *frame.dictionary, frame.registers[0], result.value);
+
+    if (result.failure) {
+        return result.exception;
+    }
+
+    *frame.dictionary = result.value;
+
+    return NULL;
 }
 
 LimeValue lime_map_get_or_else(LimeValue map, LimeValue key, LimeValue otherwise) {
@@ -152,7 +217,24 @@ LimeResult lime_map_put(LimeStack stack, LimeValue map, LimeValue key, LimeValue
     }
 
     result.value = variables.registers[0];
+
     return result;
+}
+
+bool lime_library_is_loaded(char *path) {
+    #if defined(OS_UNIX)
+        void *handle = dlopen(path, RTLD_LAZY | RTLD_NOLOAD);
+        if (handle != NULL) {
+            dlclose(handle);
+            return true;
+        } else {
+            return false;
+        }
+    #elif defined(OS_WINDOWS)
+        return GetModuleHandle(path) != NULL;
+    #else
+        return false;
+    #endif
 }
 
 u64 lime_value_hash(LimeValue value) {
@@ -282,15 +364,6 @@ bool lime_value_equals(LimeValue a, LimeValue b) {
 }
 
 bool lime_map_subset_of(LimeValue superset, LimeValue subset) {
-    static struct lime_value marker = {
-        .type = LimeSymbolValue,
-        .location = NULL,
-        .hash = 31,
-        .symbol = {
-            .length = 0
-        }
-    };
-
     if (subset->map.length > superset->map.length) {
         return false;
     }
@@ -299,11 +372,11 @@ bool lime_map_subset_of(LimeValue superset, LimeValue subset) {
         LimeValue bucket = subset->map.buckets[i];
 
         while (bucket != NULL) {
-            const LimeValue result = lime_map_get_or_else(superset, bucket->list.head, &marker);
+            const LimeValue result = lime_map_get_or_else(superset, bucket->list.head, lime_sentinel_value);
 
             bucket = bucket->list.tail;
 
-            if (result == &marker) {
+            if (result == lime_sentinel_value) {
                 return false;
             } else if (!lime_value_equals(bucket->list.head, result)) {
                 return false;
@@ -336,10 +409,15 @@ u64 lime_value_byte_size(LimeValue value) {
 void lime_value_debug(LimeValue value, char *message, ...) {
     va_list list;
     printf("[debug] ");
+    fflush(stdout);
+
     va_start(list, message);
     vprintf(message, list);
+    fflush(stdout);
     va_end(list);
+
     lime_value_dump(stdout, value);
+
     printf("\n");
     fflush(stdout);
 }
@@ -833,24 +911,32 @@ LimeResult lime_library(LimeStack stack, char *path) {
         return result;
     }
 
-    // The library value has to be secured in a register, otherwise the module's
-    // initialization function may destroy it (and close the library handle)
-    frame.registers[0] = result.value;
-
-    // It is important to add the library to the list of weak references before any
-    // action is performed that may require us to close the handle again (e.g. in
-    // case of an exception when calling the 'lime_module_initialize' function).
-    // By adding the library value to the list of weak references the garbage collector
-    // is able to close the library automatically if it is no longer needed. 
-    result = gc_add_library(result.value);
-    if (result.failure) {
-        return result;
-    }
-
+    bool already_loaded = false;
     #if defined(OS_UNIX)
-        result.value->library.handle = dlopen(path, RTLD_LAZY);
+        // check if the library was already loaded
+        result.value->library.handle = dlopen(path, RTLD_LAZY | RTLD_NOLOAD);
+        if (result.value->library.handle == NULL) {
+            // the library was not previously loaded
+            result.value->library.handle = dlopen(path, RTLD_LAZY);
+        } else {
+            /** 
+             * In contrast to 'GetModuleHandle', 'dlopen' always increments the internal 
+             * reference counter. For that reason, we need to "close" the handle if it
+             * could be successfully loaded. The handle should be still valid as it was
+             * previously opened by a 'dlopen' call without 'RTLD_NOLOAD'.
+             */
+            dlclose(result.value->library.handle);
+            already_loaded = true;
+        }
     #elif defined(OS_WINDOWS)
-        result.value->library.handle = LoadLibrary(path);
+        // check if the library was already loaded
+        result.value->library.handle = GetModuleHandle(path);
+        if (result.value->library.handle == NULL) {
+            // the library was not previously loaded
+            result.value->library.handle = LoadLibrary(path);
+        } else {
+            already_loaded = true;
+        }
     #else
         // setting the handle to 'NULL' here triggers the error in the next line, which is 
         // desired because native libraries are not supported on this platform.
@@ -863,27 +949,41 @@ LimeResult lime_library(LimeStack stack, char *path) {
         return result;
     }
 
-    #if defined(OS_UNIX)
-        const LimeFunction initialize = (LimeFunction) dlsym(result.value->library.handle, "lime_module_initialize");
-    #elif defined(OS_WINDOWS)
-        const LimeFunction initialize = (LimeFunction) GetProcAddress(result.value->library.handle, "lime_module_initialize");
-    #else 
-        const LimeFunction initialize = NULL;
-    #endif
-  
-    if (initialize == NULL) {
-        // the library handle is closed by the garbage collector
-        result.exception = lime_exception(&frame, "failed to load library '%s' in function '%s'", path, __FUNCTION__);
-        result.failure = true;
+    result = gc_add_library(result.value);
+    if (result.failure) {
         return result;
     }
 
-    LimeValue exception = initialize(&frame);
-    if (exception != NULL) {
-        result.exception = exception;
-        result.failure = true;
-        return result;
+    
+    // The library value has to be secured in a register, otherwise the module's
+    // initialization function may destroy it (and close the library handle)
+    frame.registers[0] = result.value;
+
+    if (!already_loaded) {
+        #if defined(OS_UNIX)
+            LimeValue (*const initialize)(LimeStack, LimeValue) = (LimeValue (*)(LimeStack, LimeValue)) dlsym(result.value->library.handle, "lime_module_initialize");
+        #elif defined(OS_WINDOWS)
+            LimeValue (*const initialize)(LimeStack, LimeValue) = (LimeValue (*)(LimeStack, LimeValue)) GetProcAddress(result.value->library.handle, "lime_module_initialize");
+        #else 
+            LimeValue (*const initialize)(LimeStack, LimeValue) = NULL;
+        #endif
+
+        if (initialize == NULL) {
+            // the library handle is closed by the garbage collector
+            result.exception = lime_exception(&frame, "failed to load library '%s' in function '%s'", path, __FUNCTION__);
+            result.failure = true;
+            return result;
+        }
+
+        LimeValue exception = initialize(&frame, result.value);
+        if (exception != NULL) {
+            result.exception = exception;
+            result.failure = true;
+            return result;
+        }
     }
+
+    result.value = frame.registers[0];
 
     return result;
 }
