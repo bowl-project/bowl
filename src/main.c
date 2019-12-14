@@ -62,7 +62,7 @@ LimeValue lime_module_initialize(LimeStack stack, LimeValue library) {
         }
     };
 
-    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, NULL, NULL, NULL);
+    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
 
     // set up the dictionary
     LimeResult result = lime_map(&frame, 16);
@@ -80,7 +80,7 @@ LimeValue lime_module_initialize(LimeStack stack, LimeValue library) {
     }
 
     // remember a reference of the native library to avoid it from being closed
-    frame.registers[0] = result.value;
+    frame.registers[1] = result.value;
 
     // set up the datastack
     result = lime_list(&frame, *frame.dictionary, *frame.datastack);

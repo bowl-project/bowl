@@ -34,10 +34,8 @@ static LimeValue gc_relocate(LimeValue value) {
     } else if (value->location == NULL) {
         const LimeValue copy = (LimeValue) (gc_heap_dst + gc_heap_ptr);
         const u64 bytes = lime_value_byte_size(value);
-
         gc_heap_ptr += bytes;
         memcpy(copy, value, bytes);
-
         value->location = copy;
     }
 
@@ -69,6 +67,7 @@ LimeValue lime_collect_garbage(LimeStack stack) {
     while (scan < gc_heap_ptr) {
         const LimeValue value = (LimeValue) (gc_heap_dst + scan);
         const u64 bytes = lime_value_byte_size(value);
+        scan += bytes;
 
         switch (value->type) {
             case LimeNativeValue:
@@ -87,12 +86,9 @@ LimeValue lime_collect_garbage(LimeStack stack) {
                 // not a compound type
                 break;
         }
-
-        scan += bytes;
     }
 
     // clean up all libraries which are no longer needed
-
     LimeResult result = {
         .failure = false,
         .value = NULL
@@ -168,18 +164,13 @@ LimeValue lime_collect_garbage(LimeStack stack) {
 }
 
 static bool gc_heap_reallocate(u64 new_heap_size) {
-    if (gc_heap_src == NULL) {
-        gc_heap_src = malloc(new_heap_size * sizeof(u8));
-        return gc_heap_src != NULL;
+    u8 *const new_heap_src = realloc(gc_heap_src, new_heap_size * sizeof(u8));
+    if (new_heap_src == NULL) {
+        // if 'new_heap_src' is 'NULL' the reallocation failed, but the old heap is still intact
+        return false;
     } else {
-        u8 *const new_heap_src = realloc(gc_heap_src, new_heap_size * sizeof(u8));
-        if (new_heap_src == NULL) {
-            // if 'new_heap_src' is 'NULL' the reallocation failed, but the old heap is still intact
-            return false;
-        } else {
-            gc_heap_src = new_heap_src;
-            return true;
-        }
+        gc_heap_src = new_heap_src;
+        return true;
     }
 }
 
@@ -210,8 +201,8 @@ static LimeValue gc_heap_resize(LimeStack stack, const u64 new_heap_size) {
 
 LimeResult gc_allocate(LimeStack stack, LimeValueType type, u64 additional) {
     LimeResult result = {
-        .value = NULL,
-        .exception = NULL
+        .failure = false,
+        .value = NULL
     };
 
     const u64 bytes = sizeof(struct lime_value) + additional;
@@ -220,6 +211,7 @@ LimeResult gc_allocate(LimeStack stack, LimeValueType type, u64 additional) {
         // try to collect garbage
         result.exception = lime_collect_garbage(stack);
         if (result.exception != NULL) {
+            result.failure = true;
             return result;
         }
 
@@ -235,9 +227,11 @@ LimeResult gc_allocate(LimeStack stack, LimeValueType type, u64 additional) {
                 // try to resize the heap to the minimum if it is truly smaller than the "best" heap size
                 result.exception = gc_heap_resize(stack, minimum_heap_size);
                 if (result.exception != NULL) {
+                    result.failure = true;
                     return result;
                 }
             } else if (result.exception != NULL) {
+                result.failure = true;
                 return result;
             }
         }

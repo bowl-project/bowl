@@ -19,3 +19,17 @@ char *escape(char c) {
         default:   return NULL;
     }
 }
+
+void assert(bool test, char *message, ...) {
+    va_list list;
+
+    if (!test) {
+        fprintf(stderr, "[assertion failed] ");
+        va_start(list, message);
+        vfprintf(stderr, message, list);
+        va_end(list);
+        fprintf(stderr, "\n");
+        fflush(stderr);
+        exit(EXIT_FAILURE);
+    }
+}

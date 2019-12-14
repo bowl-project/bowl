@@ -103,7 +103,7 @@ static LimeResult lime_map_insert(LimeStack stack, LimeValue bucket, LimeValue k
 }
 
 LimeValue lime_register_function(LimeStack stack, char *name, LimeValue library, LimeFunction function) {
-    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, NULL, NULL, NULL);
+    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
     LimeResult result;
 
     result = lime_symbol(&frame, (u8*) name, strlen(name));
@@ -112,14 +112,14 @@ LimeValue lime_register_function(LimeStack stack, char *name, LimeValue library,
         return result.exception;
     }
 
-    frame.registers[0] = result.value;
-    result = lime_function(&frame, library, function);
+    frame.registers[1] = result.value;
+    result = lime_function(&frame, frame.registers[0], function);
 
     if (result.failure) {
         return result.exception;
     }
 
-    result = lime_map_put(&frame, *frame.dictionary, frame.registers[0], result.value);
+    result = lime_map_put(&frame, *frame.dictionary, frame.registers[1], result.value);
 
     if (result.failure) {
         return result.exception;
@@ -852,7 +852,7 @@ LimeResult lime_function(LimeStack stack, LimeValue library, LimeFunction functi
     LimeResult result = gc_allocate(&frame, LimeNativeValue, 0);
     
     if (!result.failure) {
-        result.value->function.library = library;
+        result.value->function.library = frame.registers[0];
         result.value->function.function = function;
     }
 
