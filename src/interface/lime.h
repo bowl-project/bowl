@@ -110,6 +110,19 @@ typedef LimeStackFrame *LimeStack;
     .datastack = (stack)->datastack\
 }
 
+/** 
+ * A macro for empty stack frames. 
+ * @param stack A pointer to the previous stack frame or 'NULL' if there is none.
+ * @return A designated initializer for the type 'LimeStackFrame'.
+ */
+#define LIME_EMPTY_STACK_FRAME(stack) {\
+    .previous = (stack),\
+    .registers = { NULL, NULL, NULL },\
+    .dictionary = NULL,\
+    .callstack = NULL,\
+    .datastack = NULL\
+}
+
 /**
  * The interface of a native function for lime.
  * 
@@ -120,6 +133,19 @@ typedef LimeStackFrame *LimeStack;
  * datastack accordingly.
  */
 typedef LimeValue (*LimeFunction)(LimeStack stack);
+
+/**
+ * The type of a native library handle. 
+ * 
+ * On unsupported platforms this type defaults to the generic 'void*' type.
+ */
+#if defined(OS_UNIX)
+    typedef void *LimeLibraryHandle;
+#elif defined(OS_WINDOWS)
+    typedef HINSTANCE LimeLibraryHandle;
+#else
+    typedef void *LimeLibraryHandle;
+#endif
 
 /**
  * The actual data structure of a lime value.
@@ -266,16 +292,17 @@ struct lime_value {
          * type 'library'.
          */
         struct {
-            #if defined(OS_UNIX)
-                /** The handle of the dynamic library. */
-                void *handle;
-            #elif defined(OS_WINDOWS)
-                /** The handle of the dynamic library. */
-                HINSTANCE handle;
-            #else
-                /** A dummy handle for all unsupported platforms. */
-                void *handle;
-            #endif
+            /** The handle of the dynamic library. */
+            LimeLibraryHandle handle;
+            /** The length of this library's name. */
+            u64 length;
+            /** 
+             * The bytes of this library's name. 
+             * 
+             * This array contains exactly 'length' bytes and is allocated along
+             * with the instance of this value.
+             */
+            u8  bytes[];
         } library;
     };
 };

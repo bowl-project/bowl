@@ -398,6 +398,8 @@ u64 lime_value_byte_size(LimeValue value) {
                 return sizeof(struct lime_value) + value->symbol.length * sizeof(u8);
             case LimeStringValue:
                 return sizeof(struct lime_value) + value->string.length * sizeof(u8);
+            case LimeLibraryValue:
+                return sizeof(struct lime_value) + value->library.length * sizeof(u8);
             case LimeMapValue:
                 return sizeof(struct lime_value) + value->map.capacity * sizeof(LimeValue);
             default:
@@ -564,7 +566,7 @@ static bool lime_value_printf_buffer(char **buffer, u64 *length, u64 *capacity, 
         *length += required;
         return true;
     } else {
-        // something unexpected happen
+        // something unexpected happened
         free(*buffer);
         *buffer = NULL;
         *length = 0;
@@ -905,85 +907,28 @@ LimeResult lime_number(LimeStack stack, double value) {
 LimeResult lime_library(LimeStack stack, char *path) {
     LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, NULL, NULL, NULL);
     LimeResult result;
+    LimeLibraryHandle handle;
+    bool already_loaded;
+    const u64 length = strlen(path);
 
-    result = gc_allocate(&frame, LimeLibraryValue, 0);
+    result = gc_allocate(&frame, LimeLibraryValue, length);
+
     if (result.failure) {
         return result;
     }
 
-    bool already_loaded = false;
-    #if defined(OS_UNIX)
-        // check if the library was already loaded
-        result.value->library.handle = dlopen(path, RTLD_LAZY | RTLD_NOLOAD);
-        if (result.value->library.handle == NULL) {
-            // the library was not previously loaded
-            result.value->library.handle = dlopen(path, RTLD_LAZY);
-        } else {
-            /** 
-             * In contrast to 'GetModuleHandle', 'dlopen' always increments the internal 
-             * reference counter. For that reason, we need to "close" the handle if it
-             * could be successfully loaded. The handle should be still valid as it was
-             * previously opened by a 'dlopen' call without 'RTLD_NOLOAD'.
-             */
-            dlclose(result.value->library.handle);
-            already_loaded = true;
-        }
-    #elif defined(OS_WINDOWS)
-        // check if the library was already loaded
-        result.value->library.handle = GetModuleHandle(path);
-        if (result.value->library.handle == NULL) {
-            // the library was not previously loaded
-            result.value->library.handle = LoadLibrary(path);
-        } else {
-            already_loaded = true;
-        }
-    #else
-        // setting the handle to 'NULL' here triggers the error in the next line, which is 
-        // desired because native libraries are not supported on this platform.
-        result.value->library.handle = NULL;
-    #endif
-
-    if (result.value->library.handle == NULL) {
-        result.exception = lime_exception(&frame, "failed to load library '%s' in function '%s'", path, __FUNCTION__);
-        result.failure = true;
-        return result;
-    }
-
-    result = gc_add_library(result.value);
-    if (result.failure) {
-        return result;
-    }
-
-    
-    // The library value has to be secured in a register, otherwise the module's
-    // initialization function may destroy it (and close the library handle)
     frame.registers[0] = result.value;
+    frame.registers[0]->library.handle = NULL;
+    frame.registers[0]->library.length = length;
+    memcpy(frame.registers[0]->library.bytes, (u8*) path, length * sizeof(u8));
+    result = gc_add_library(&frame, frame.registers[0]);
 
-    if (!already_loaded) {
-        #if defined(OS_UNIX)
-            LimeValue (*const initialize)(LimeStack, LimeValue) = (LimeValue (*)(LimeStack, LimeValue)) dlsym(result.value->library.handle, "lime_module_initialize");
-        #elif defined(OS_WINDOWS)
-            LimeValue (*const initialize)(LimeStack, LimeValue) = (LimeValue (*)(LimeStack, LimeValue)) GetProcAddress(result.value->library.handle, "lime_module_initialize");
-        #else 
-            LimeValue (*const initialize)(LimeStack, LimeValue) = NULL;
-        #endif
-
-        if (initialize == NULL) {
-            // the library handle is closed by the garbage collector
-            result.exception = lime_exception(&frame, "failed to load library '%s' in function '%s'", path, __FUNCTION__);
-            result.failure = true;
-            return result;
-        }
-
-        LimeValue exception = initialize(&frame, result.value);
-        if (exception != NULL) {
-            result.exception = exception;
-            result.failure = true;
-            return result;
-        }
+    if (result.failure) {
+        return result;
     }
 
     result.value = frame.registers[0];
+    result.failure = false;
 
     return result;
 }

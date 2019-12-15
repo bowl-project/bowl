@@ -6,24 +6,37 @@ static u8 *gc_heap_src = NULL;
 static u64 gc_heap_ptr = 0;
 static u64 gc_heap_size = 0;
 
-static GarbageCollectorLibraryEntry *gc_libraries = NULL;
+// a list of all libraries which are currently loaded
+static LimeValue *gc_libraries = NULL;
 static u64 gc_libraries_capacity = 0;
-static u64 gc_libraries_length = 0;
+static u64 gc_libraries_size = 0;
 
 static inline bool gc_is_managed(LimeValue value) {
     // only objects that resize inside the 'gc_heap_src' are managed by the garbage collector
     return (u64) value >= (u64) gc_heap_src && (u64) value < (u64) (gc_heap_src + gc_heap_size);
 }
 
-static void gc_remove_library(u64 index) {
-    free(gc_libraries[index].libraries);
-    memmove(&gc_libraries[index], &gc_libraries[index + 1], (gc_libraries_length - (index + 1)) * sizeof(GarbageCollectorLibraryEntry));
-    gc_libraries_length -= 1;
+static LimeValue gc_add_library_to_list(LimeValue library) {
+    if (gc_libraries_size >= gc_libraries_capacity) {
+        const u64 capacity = MAX(gc_libraries_capacity * 2, 16);
+        
+        LimeValue *const new_libraries = realloc(gc_libraries, sizeof(LimeValue) * capacity);
+        if (new_libraries == NULL) {
+            return lime_exception_out_of_heap;
+        } else {
+            gc_libraries = new_libraries;
+            gc_libraries_capacity = capacity;
+        }
+    }
+
+    gc_libraries[gc_libraries_size++] = library;
+
+    return NULL;
 }
 
-static void gc_remove_library_from_entry(GarbageCollectorLibraryEntry *entry, u64 index) {
-    memmove(&entry->libraries[index], &entry->libraries[index + 1], (entry->length - (index + 1)) * sizeof(LimeValue));
-    entry->length -= 1;
+static void gc_remove_library_from_list(u64 index) {
+    memmove(&gc_libraries[index], &gc_libraries[index + 1], (gc_libraries_size - (index + 1)) * sizeof(LimeValue));
+    --gc_libraries_size;
 }
 
 static LimeValue gc_relocate(LimeValue value) {
@@ -50,20 +63,29 @@ LimeValue lime_collect_garbage(LimeStack stack) {
     gc_heap_ptr = 0;
 
     // mark the root objects
-    while (stack != NULL) {
-        for (u64 i = 0; i < sizeof(stack->registers) / sizeof(stack->registers[0]); ++i) {
-            stack->registers[i] = gc_relocate(stack->registers[i]);
+    register LimeStack current = stack;
+    while (current != NULL) {
+        for (u64 i = 0; i < sizeof(current->registers) / sizeof(current->registers[0]); ++i) {
+            current->registers[i] = gc_relocate(current->registers[i]);
         }
 
-        *stack->dictionary = gc_relocate(*stack->dictionary);
-        *stack->callstack = gc_relocate(*stack->callstack);
-        *stack->datastack = gc_relocate(*stack->datastack);
+        if (current->dictionary != NULL) {
+            *current->dictionary = gc_relocate(*current->dictionary);
+        }
 
-        stack = stack->previous;
+        if (current->callstack != NULL) {
+            *current->callstack = gc_relocate(*current->callstack);
+        }
+
+        if (current->datastack != NULL) {
+            *current->datastack = gc_relocate(*current->datastack);
+        }
+
+        current = current->previous;
     }
 
     // relocate all objects which are reachable from the root objects
-    u64 scan = 0;
+    register u64 scan = 0;
     while (scan < gc_heap_ptr) {
         const LimeValue value = (LimeValue) (gc_heap_dst + scan);
         const u64 bytes = lime_value_byte_size(value);
@@ -88,79 +110,42 @@ LimeValue lime_collect_garbage(LimeStack stack) {
         }
     }
 
-    // clean up all libraries which are no longer needed
-    LimeResult result = {
-        .failure = false,
-        .value = NULL
-    };
+    // update all weak references
+    for (u64 i = 0; i < gc_libraries_size; ++i) {
+        const LimeValue library = gc_libraries[i];
 
-    for (u64 i = 0; i < gc_libraries_length; ++i) {
-        GarbageCollectorLibraryEntry *const entry = &gc_libraries[i];
-   
-        for (u64 j = 0; j < entry->length; ++j) {
-            const LimeValue library = entry->libraries[j];
-
-            if (gc_is_managed(library)) {
-                if (library->location == NULL) {
-                    // this library value is marked as dirty and will be cleaned up
-                    
-                    gc_remove_library_from_entry(entry, j);
-                    j -= 1;
-
-                    if (entry->length == 0) {
-                        // this was the last library value, i.e. finalize and close the library
-                        #if defined(OS_UNIX)
-                            LimeValue (*const finalize)(LimeStack, LimeValue) = (LimeValue (*)(LimeStack, LimeValue)) dlsym(library->library.handle, "lime_module_finalize");
-                            void *handle;
-                        #elif defined(OS_WINDOWS)
-                            LimeValue (*const finalize)(LimeStack, LimeValue) = (LimeValue (*)(LimeStack, LimeValue)) GetProcAddress(library->library.handle, "lime_module_finalize");
-                            HINSTANCE handle;
-                        #else 
-                            LimeValue (*const finalize)(LimeStack, LimeValue) = NULL;
-                            void *handle;
-                        #endif
-                    
-                        // remember the handle before calling userland
-                        handle = library->library.handle;
-
-                        // call finalize if possible
-                        if (finalize == NULL) {
-                            result.failure = true;
-                            result.exception = lime_exception_finalization_failure;
-                        } else {
-                            result.exception = finalize(stack, library);
-                            if (result.exception != NULL) {
-                                result.failure = true;
-                            }
-                        }
-
-                        // close the handle
-                        #if defined(OS_UNIX)
-                        if (dlclose(handle) != 0 && !result.failure) {
-                        #elif defined(OS_WINDOWS)
-                        if (FreeLibrary(handle) == 0 && !result.failure) {
-                        #else
-                        if (!result.failure) {
-                        #endif
-                            result.failure = true;
-                            result.exception = lime_exception_finalization_failure;
-                        }
-
-                        gc_remove_library(i);
-                        i -= 1;
-
-                        if (result.failure) {
-                            return result.exception;
-                        }
-                    }
-                } else if (library != NULL) {
-                    entry->libraries[j] = library->location;
-                }
-            }
+        if (library->location != NULL) {
+            gc_libraries[i] = library->location;
         }
     }
 
-    return NULL;
+    // clean up all libraries which are no longer needed
+    LimeLibraryResult result = {
+        .failure = false,
+        .exception = NULL
+    };
+
+    for (u64 i = 0; i < gc_libraries_size; ++i) {
+        const LimeValue library = gc_libraries[i];
+
+        if (!gc_is_managed(library)) {
+            continue;
+        }
+
+        if (!result.failure) {
+            gc_remove_library_from_list(i--);
+            result = library_close(stack, library);
+        } else {
+            // relocate rest of the libraries to defer their finalization
+            gc_libraries[i] = gc_relocate(library);
+        }
+    }
+
+    if (result.failure) {
+        return result.exception;
+    } else {
+        return NULL;
+    }
 }
 
 static bool gc_heap_reallocate(u64 new_heap_size) {
@@ -247,67 +232,27 @@ LimeResult gc_allocate(LimeStack stack, LimeValueType type, u64 additional) {
     return result;
 }
 
-static LimeValue gc_add_library_to_entry(GarbageCollectorLibraryEntry *entry, LimeValue library) {
-    if (entry->length >= entry->capacity) {
-        const u64 capacity = MAX(entry->capacity * 2, 16);
-        LimeValue *libraries = realloc(entry->libraries, capacity * sizeof(LimeValue));
-
-        if (libraries == NULL) {
-            return lime_exception_out_of_heap;
-        }
-
-        entry->capacity = capacity;
-        entry->libraries = libraries;
-    }
-
-    entry->libraries[entry->length++] = library;
-    return NULL;
-}
-
-LimeResult gc_add_library(LimeValue library) {
+LimeResult gc_add_library(LimeStack stack, LimeValue library) {
+    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
     LimeResult result = {
         .failure = false,
-        .value = library
+        .value = NULL
     };
 
-    GarbageCollectorLibraryEntry *entry = NULL;
+    LimeLibraryResult library_result = library_open(&frame, frame.registers[0]);
 
-    // check if the library was already added
-    for (u64 i = 0; i < gc_libraries_length; ++i) {
-        GarbageCollectorLibraryEntry *const current = &gc_libraries[i];
-
-        if (current->length > 0 && current->libraries[0]->library.handle == library->library.handle) {
-            entry = current;
-            break;
-        }
-    }
-
-    if (entry == NULL) {
-        if (gc_libraries_length >= gc_libraries_capacity) {
-            const u64 capacity = MAX(gc_libraries_capacity * 2, 16);
-            GarbageCollectorLibraryEntry *const libraries = realloc(gc_libraries, capacity * sizeof(GarbageCollectorLibraryEntry));
-
-            if (libraries == NULL) {
-                result.failure = true;
-                result.exception = lime_exception_out_of_heap;
-                return result;
-            }
-
-            gc_libraries = libraries;
-            gc_libraries_capacity = capacity;
-        }
-
-        entry = &gc_libraries[gc_libraries_length++];
-        entry->capacity = 0;
-        entry->length = 0;
-        entry->libraries = NULL;
-    }
-
-    const LimeValue exception = gc_add_library_to_entry(entry, library);
-
-    if (exception != NULL) {
+    if (library_result.failure) {
         result.failure = true;
-        result.exception = exception;
+        result.exception = library_result.exception;
+        return result;
+    }
+
+    result.exception = gc_add_library_to_list(frame.registers[0]);
+
+    if (result.exception != NULL) {
+        result.failure = true;
+    } else {
+        result.value = frame.registers[0];
     }
 
     return result;

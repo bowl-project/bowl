@@ -33,3 +33,14 @@ void assert(bool test, char *message, ...) {
         exit(EXIT_FAILURE);
     }
 }
+
+void println(char *message, ...) {
+    va_list list;
+
+    va_start(list, message);
+    vfprintf(stdout, message, list);
+    va_end(list);
+
+    fprintf(stdout, "\n");
+    fflush(stdout);
+}

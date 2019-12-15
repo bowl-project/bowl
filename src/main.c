@@ -37,17 +37,17 @@ int main(int argc, char *argv[]) {
         callstack = result.value;
     }
 
-    LimeValue exception = lime_module_initialize(&frame, NULL);
+    const LimeValue initialize_exception = lime_module_initialize(&frame, NULL);
+    const LimeValue finalize_exception = lime_module_finalize(&frame, NULL);
     
-    if (exception == NULL) {
-        exception = lime_module_finalize(&frame, NULL);
-    }
-     
-    if (exception == NULL) {
-        return EXIT_SUCCESS;
-    } else {
-        fail(exception);
+    if (initialize_exception != NULL) {
+        fail(initialize_exception);
         return EXIT_FAILURE;
+    } else if (finalize_exception != NULL) {
+        fail(finalize_exception);
+        return EXIT_FAILURE;
+    } else {
+        return EXIT_SUCCESS;
     }
 }
 
@@ -116,5 +116,6 @@ LimeValue lime_module_initialize(LimeStack stack, LimeValue library) {
 
 LimeValue lime_module_finalize(LimeStack stack, LimeValue library) {
     // run garbage collector a last time to clean things up (e.g. native libraries)
-    return lime_collect_garbage(NULL);
+    LimeStackFrame empty = LIME_EMPTY_STACK_FRAME(NULL);
+    return lime_collect_garbage(&empty);
 }

@@ -18,4 +18,6 @@ char *escape(char c);
 
 void assert(bool test, char *message, ...);
 
+void println(char *message, ...);
+
 #endif

@@ -4,6 +4,15 @@
 #include "lime.h"
 
 /**
+ * The interface of module functions.
+ * 
+ * A module function accepts the stack of the current environment and
+ * the library value which is associated with the module. It returns
+ * either an exception or 'NULL' otherwise.
+ */
+typedef LimeValue (*LimeModuleFunction)(LimeStack, LimeValue);
+
+/**
  * This function must be implemented by the module author.
  * It is executed as soon as the virtual machine loads the native library.
  * @param stack The stack of the current environment.
