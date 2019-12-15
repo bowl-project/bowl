@@ -2,8 +2,8 @@
 #define LIBRARY_H
 
 #include "../common/utility.h"
-#include "../interface/lime.h"
-#include "../interface/api.h"
+#include <lime/lime.h>
+#include <lime/api.h>
 
 typedef struct {
     u64 length;
