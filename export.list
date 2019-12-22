@@ -10,6 +10,7 @@
     lime_register_function;
     lime_value_hash;
     lime_value_equals;
+    lime_value_clone;
     lime_value_debug;
     lime_value_byte_size;
     lime_value_dump;

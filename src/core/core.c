@@ -830,6 +830,26 @@ LimeResult lime_allocate(LimeStack stack, LimeValueType type, u64 additional) {
     return gc_allocate(stack, type, additional);
 }
 
+LimeResult lime_value_clone(LimeStack stack, LimeValue value) {
+    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, value, NULL, NULL);
+    LimeResult result;
+
+    if (frame.registers[0] == NULL) {
+        result.value = NULL;
+        result.failure = false;
+    } else {
+        const u64 size = lime_value_byte_size(frame.registers[0]);
+        const u64 additional = size - sizeof(struct lime_value);
+        result = gc_allocate(&frame, frame.registers[0]->type, additional);
+
+        if (!result.failure) {
+            memcpy(result.value, frame.registers[0], size);
+        }
+    }
+
+    return result;
+}
+
 LimeResult lime_symbol(LimeStack stack, u8 *bytes, u64 length) {
     LimeResult result = gc_allocate(stack, LimeSymbolValue, length * sizeof(u8));
 
