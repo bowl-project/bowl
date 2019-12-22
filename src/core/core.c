@@ -826,6 +826,10 @@ LimeValue lime_exception(LimeStack stack, char *message, ...) {
     }
 }
 
+LimeResult lime_allocate(LimeStack stack, LimeValueType type, u64 additional) {
+    return gc_allocate(stack, type, additional);
+}
+
 LimeResult lime_symbol(LimeStack stack, u8 *bytes, u64 length) {
     LimeResult result = gc_allocate(stack, LimeSymbolValue, length * sizeof(u8));
 

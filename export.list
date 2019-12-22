@@ -17,6 +17,7 @@
     lime_value_length;
     lime_value_type;
     lime_exception;
+    lime_allocate;
     lime_symbol;
     lime_string;
     lime_function;
