@@ -1,5 +1,16 @@
 #include "main.h"
 
+static void error(char *message, ...) {
+    va_list list;
+    fprintf(stderr, "[exception] ");
+    va_start(list, message);
+    vfprintf(stderr, message, list);
+    va_end(list);
+    fprintf(stderr, "\n");
+    fflush(stderr);
+    exit(EXIT_FAILURE);
+}
+
 static void fail(LimeValue exception) {
     fprintf(stderr, "[exception] ");
     lime_value_dump(stderr, exception);
@@ -8,7 +19,7 @@ static void fail(LimeValue exception) {
     exit(EXIT_FAILURE);
 }
 
-int main(int argc, char *argv[]) {
+static void execute(char *program) {
     LimeValue callstack = NULL;
     LimeValue datastack = NULL;
     LimeValue dictionary = NULL;
@@ -21,34 +32,61 @@ int main(int argc, char *argv[]) {
         .dictionary = &dictionary
     };
 
-    for (int i = argc - 1; i > 0; --i) {
-        LimeResult result = lime_symbol(&frame, (u8*) argv[i], strlen(argv[i]));
+    LimeResult result = lime_string(&frame, (u8 *) program, strlen(program));
 
-        if (result.failure) {
-            fail(result.exception);
-        }
-
-        result = lime_list(&frame, result.value, callstack);
-        
-        if (result.failure) {
-            fail(result.exception);
-        }
-
-        callstack = result.value;
+    if (result.failure) {
+        fail(result.exception);
     }
+
+    result = lime_tokens(&frame, result.value);
+
+    if (result.failure) {
+        fail(result.exception);
+    }
+
+    callstack = result.value;
 
     const LimeValue initialize_exception = lime_module_initialize(&frame, NULL);
     const LimeValue finalize_exception = lime_module_finalize(&frame, NULL);
     
     if (initialize_exception != NULL) {
         fail(initialize_exception);
-        return EXIT_FAILURE;
     } else if (finalize_exception != NULL) {
         fail(finalize_exception);
-        return EXIT_FAILURE;
-    } else {
-        return EXIT_SUCCESS;
     }
+}
+
+static inline bool matches_flag(char *const argument, const u64 count, ...) {
+    if (argument == NULL || *argument == '\0') {
+        return false;
+    } else if (argument[0] != '-') {
+        return false;
+    }
+    
+    va_list list;
+    va_start(list, count);
+    for (u64 i = 0; i < count; ++i) {
+        if (strcmp(argument + 1, va_arg(list, char *)) == 0) {
+            return true;
+        }
+    }
+    va_end(list);
+    
+    return false;
+}
+
+int main(int argc, char *argv[]) {
+    for (u64 i = 0; i < argc; ++i) {
+        if (matches_flag(argv[i], 2, "execute", "x")) {
+            if (i + 1 < argc) {
+                execute(argv[++i]);
+            } else {
+                error("missing argument for flag '%s'", argv[i]);
+            }
+        }
+    }
+
+    return EXIT_SUCCESS;
 }
 
 LimeValue lime_module_initialize(LimeStack stack, LimeValue library) {
