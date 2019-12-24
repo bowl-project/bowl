@@ -850,6 +850,81 @@ LimeResult lime_value_clone(LimeStack stack, LimeValue value) {
     return result;
 }
 
+LimeResult lime_list_reverse(LimeStack stack, LimeValue list) {
+    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, list, NULL, NULL);
+    LimeResult result;
+
+    while (frame.registers[0] != NULL) {
+        result = lime_list(&frame, frame.registers[0]->list.head, frame.registers[1]);
+
+        if (result.failure) {
+            return result;
+        }
+
+        frame.registers[1] = result.value;
+        frame.registers[0] = frame.registers[0]->list.tail;
+    }
+
+    result.value = frame.registers[1];
+    result.failure = false;
+
+    return result;
+}
+
+LimeResult lime_tokens(LimeStack stack, LimeValue string) {
+    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, string, NULL, NULL);
+    LimeScanner scanner = scanner_from(frame.registers[0]->string.bytes, frame.registers[0]->string.length);
+    LimeResult result;
+
+    while (scanner_has_next(&scanner)) {
+        switch (scanner_next(&scanner)) {
+            case LimeErrorToken:
+                result.failure = true;
+                result.exception = lime_exception(&frame, "%s in line %" PRId64 " at character %" PRId64, scanner.token.error.message, scanner.token.line, scanner.token.column);
+                return result;
+
+            case LimeBooleanToken:
+                result = lime_boolean(&frame, scanner.token.boolean.value);
+                break;
+
+            case LimeNumberToken:
+                result = lime_number(&frame, scanner.token.number.value);
+                break;
+
+            case LimeSymbolToken:
+                result = lime_allocate(&frame, LimeSymbolValue, scanner.token.string.length);
+                
+                if (!result.failure) {
+                    result.value->string.length = scanner.token.string.length;
+                    memcpy(
+                        result.value->string.bytes, 
+                        frame.registers[0]->string.bytes + scanner.token.string.start, 
+                        scanner.token.string.length * sizeof(u8)
+                    );
+                }
+                break;
+
+            case LimeStringToken:
+                break;
+        }
+
+        if (result.failure) {
+            return result;
+        }
+
+        result = lime_list(&frame, result.value, frame.registers[1]);
+
+        if (result.failure) {
+            return result;
+        }
+
+        frame.registers[1] = result.value;
+        scanner.bytes = frame.registers[0]->string.bytes;
+    }
+
+    return lime_list_reverse(&frame, frame.registers[1]);
+}
+
 LimeResult lime_symbol(LimeStack stack, u8 *bytes, u64 length) {
     LimeResult result = gc_allocate(stack, LimeSymbolValue, length * sizeof(u8));
 
