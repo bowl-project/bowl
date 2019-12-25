@@ -2,7 +2,6 @@
 #define UTILITY_H
 
 #include <lime/common.h>
-#include <math.h>
 
 #ifndef MAX
 #define MAX(x, y) ((x) > (y) ? (x) : (y))

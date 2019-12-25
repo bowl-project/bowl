@@ -8,6 +8,8 @@
     lime_library_is_loaded;
     lime_sentinel_value;
     lime_register_function;
+    lime_settings_verbosity;
+    lime_settings_kernel_path;
     lime_value_hash;
     lime_value_equals;
     lime_value_clone;

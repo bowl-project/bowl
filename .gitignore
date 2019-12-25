@@ -2,3 +2,4 @@ lime
 *.so
 *.o
 *.dll
+*.a
