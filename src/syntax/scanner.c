@@ -42,7 +42,7 @@ static u64 scanner_advance_string(LimeScanner *scanner) {
     }
     
     if (scanner->current >= scanner->length) {
-        // TODO: error
+        return scanner->length;
     } else {
         ++scanner->current;
         ++scanner->column;
@@ -69,13 +69,24 @@ static void scanner_advance(LimeScanner *scanner) {
 
             scanner->token.type = LimeNumberToken;
             scanner->token.number.value = strtod(start, &end);
-            scanner->current += end - start;
-            scanner->column += end - start;
+            if (end == start) {
+                scanner->token.type = LimeErrorToken;
+                scanner->token.error.message = "illegal number literal";
+            } else {
+                scanner->current += end - start;
+                scanner->column += end - start;
+            }
         } else if (current == '"') {
             const u64 start = scanner_advance_string(scanner);
-            scanner->token.type = LimeStringToken;
-            scanner->token.string.start = start;
-            scanner->token.string.length = scanner->current - 1 - start;
+
+            if (start == scanner->length) {
+                scanner->token.type = LimeErrorToken;
+                scanner->token.error.message = "unexpected end of string literal";
+            } else {
+                scanner->token.type = LimeStringToken;
+                scanner->token.string.start = start;
+                scanner->token.string.length = scanner->current - 1 - start;
+            }
         } else {
             const u64 start = scanner_advance_symbol(scanner);
 

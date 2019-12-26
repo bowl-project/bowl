@@ -19,4 +19,6 @@ void assert(bool test, char *message, ...);
 
 void println(char *message, ...);
 
+char unescape(char character);
+
 #endif

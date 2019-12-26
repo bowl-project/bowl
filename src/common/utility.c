@@ -44,3 +44,17 @@ void println(char *message, ...) {
     fprintf(stdout, "\n");
     fflush(stdout);
 }
+
+char unescape(char character) {
+    switch (character) {
+        case 't': return '\t';
+        case 'f': return '\f';
+        case 'v': return '\v';
+        case 'b': return '\b';
+        case '0': return '\0';
+        case 'r': return '\r';
+        case 'n': return '\n';
+        case 'a': return '\a';
+        default: return character;
+    }
+}

@@ -892,19 +892,44 @@ LimeResult lime_tokens(LimeStack stack, LimeValue string) {
                 break;
 
             case LimeSymbolToken:
-                result = lime_allocate(&frame, LimeSymbolValue, scanner.token.string.length);
+                result = lime_allocate(&frame, LimeSymbolValue, scanner.token.symbol.length);
                 
                 if (!result.failure) {
-                    result.value->string.length = scanner.token.string.length;
+                    result.value->symbol.length = scanner.token.symbol.length;
                     memcpy(
-                        result.value->string.bytes, 
-                        frame.registers[0]->string.bytes + scanner.token.string.start, 
-                        scanner.token.string.length * sizeof(u8)
+                        result.value->symbol.bytes, 
+                        frame.registers[0]->symbol.bytes + scanner.token.symbol.start, 
+                        scanner.token.symbol.length * sizeof(u8)
                     );
                 }
                 break;
 
             case LimeStringToken:
+                result = lime_allocate(&frame, LimeStringValue, scanner.token.string.length);
+
+                if (!result.failure) {
+                    const u64 length = scanner.token.string.length;
+                    const u64 start = scanner.token.string.start;
+                    u8 *const bytes = &frame.registers[0]->symbol.bytes[0];
+                    u8 *const dst = &result.value->string.bytes[0];
+
+                    register bool escaped = false;
+                    register u64 p = 0;
+                    for (register u64 i = 0; i < length; ++i) {
+                        const char current = bytes[start + i];
+                        if (escaped) {
+                            escaped = false;
+                            dst[p++] = unescape(current);
+                        } else if (current == '\\') {
+                            escaped = true;
+                        } else {
+                            dst[p++] = current;
+                        }
+                    }
+
+                    result.value->string.length = p;
+                }
+
                 break;
         }
 
