@@ -145,6 +145,122 @@ LimeValue lime_map_get_or_else(LimeValue map, LimeValue key, LimeValue otherwise
     return otherwise;
 }
 
+LimeResult lime_map_merge(LimeStack stack, LimeValue a, LimeValue b) {
+    LimeStackFrame arguments = LIME_ALLOCATE_STACK_FRAME(stack, a, b, NULL);
+    LimeStackFrame variables = LIME_ALLOCATE_STACK_FRAME(&arguments, NULL, NULL, NULL);
+    LimeResult result = lime_map(&variables, (u64) ((arguments.registers[0]->map.capacity + arguments.registers[1]->map.capacity) * (4.0 / 3.0)));
+    
+    if (result.failure) {
+        return result;
+    }
+
+    arguments.registers[2] = result.value;
+
+    // add the first map
+    for (u64 i = 0; i < arguments.registers[0]->map.capacity; ++i) {
+        variables.registers[0] = arguments.registers[0]->map.buckets[i];
+
+        while (variables.registers[0] != NULL) {
+            result = lime_map_put(&variables, arguments.registers[2], variables.registers[0]->list.head, variables.registers[0]->list.tail->list.head);
+
+            if (result.failure) {
+                return result;
+            }
+            
+            arguments.registers[2] = result.value;
+            variables.registers[0] = variables.registers[0]->list.tail->list.tail;
+        }
+    }
+
+    // add the second map
+    for (u64 i = 0; i < arguments.registers[1]->map.capacity; ++i) {
+        variables.registers[0] = arguments.registers[1]->map.buckets[i];
+
+        while (variables.registers[0] != NULL) {
+            result = lime_map_put(&variables, arguments.registers[2], variables.registers[0]->list.head, variables.registers[0]->list.tail->list.head);
+            
+            if (result.failure) {
+                return result;
+            }
+                
+            arguments.registers[2] = result.value;
+            variables.registers[0] = variables.registers[0]->list.tail->list.tail;
+        }
+    }
+
+    result.value = arguments.registers[2];
+    result.failure = false;
+
+    return result;
+}
+
+static LimeResult lime_map_delete_at(LimeStack stack, LimeValue map, u64 bucket, u64 index) {
+    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, map, NULL, NULL);
+    LimeResult result;
+
+    result = lime_value_clone(&frame, frame.registers[0]);
+
+    if (result.failure) {
+        return result;
+    }
+
+    frame.registers[0] = result.value;
+
+    frame.registers[1] = frame.registers[0]->map.buckets[bucket];
+    u64 current = 0;
+    while (frame.registers[1] != NULL) {
+        if (index != current) {
+            result = lime_list(&frame, frame.registers[1]->list.tail->list.head, frame.registers[2]);
+
+            if (result.failure) {
+                return result;
+            }
+
+            frame.registers[2] = result.value;
+            result = lime_list(&frame, frame.registers[1]->list.head, frame.registers[2]);
+
+            if (result.failure) {
+                return result;
+            }
+
+            frame.registers[2] = result.value;
+        }
+
+        frame.registers[1] = frame.registers[1]->list.tail->list.tail;
+        ++current;
+    }
+
+    frame.registers[0]->map.buckets[bucket] = frame.registers[2];
+    result.value = frame.registers[0];
+    result.failure = false;
+
+    return result;
+}
+
+LimeResult lime_map_delete(LimeStack stack, LimeValue map, LimeValue key) {
+    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, map, key, NULL);
+
+    const u64 index = lime_value_hash(frame.registers[1]) % frame.registers[0]->map.capacity;
+
+    frame.registers[2] = frame.registers[0]->map.buckets[index];
+    u64 current = 0;
+    while (frame.registers[2] != NULL) {
+        if (lime_value_equals(frame.registers[2]->list.head, frame.registers[1])) {
+            return lime_map_delete_at(&frame, frame.registers[0], index, current);
+        }
+
+        frame.registers[2] = frame.registers[2]->list.tail->list.tail;
+        ++current;
+    }
+
+    LimeResult result = {
+        .value = frame.registers[0],
+        .failure = false
+    };
+
+    return result;
+}
+
 LimeResult lime_map_put(LimeStack stack, LimeValue map, LimeValue key, LimeValue value) {
     static const double load_factor = 0.75;
 
@@ -762,7 +878,7 @@ u64 lime_value_length(LimeValue value) {
     }
 }
 
-char *lime_value_type(LimeValue value) {
+char *lime_type_name(LimeValueType type) {
     static char *types[] = {
         [LimeSymbolValue]  = "symbol",
         [LimeListValue]    = "list",
@@ -773,12 +889,12 @@ char *lime_value_type(LimeValue value) {
         [LimeStringValue]  = "string",
         [LimeLibraryValue] = "library"
     };
-    
-    if (value == NULL) {
-        return types[LimeListValue];
-    } else {
-        return types[value->type];
-    }
+
+    return types[type];
+}
+
+char *lime_value_type(LimeValue value) {
+    return lime_type_name(value == NULL ? LimeListValue : value->type);
 }
 
 char *lime_string_to_null_terminated(LimeValue value) {

@@ -10,6 +10,9 @@
     lime_register_function;
     lime_settings_verbosity;
     lime_settings_kernel_path;
+    lime_type_name;
+    lime_map_delete;
+    lime_map_merge;
     lime_value_hash;
     lime_value_equals;
     lime_value_clone;
