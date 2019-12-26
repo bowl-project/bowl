@@ -1,5 +1,15 @@
 #include "main.h"
 
+const char *lime_settings_kernel_path =
+    #if defined(OS_WINDOWS)
+        "kernel.dll"
+    #else
+        "kernel.so"
+    #endif
+;
+
+u64 lime_settings_verbosity = 0;
+
 static CommandLineFlag commands[] = {
     {
         .name = "version",
@@ -72,7 +82,7 @@ bool command_version(char *arguments[]) {
 }
 
 bool command_kernel(char *arguments[]) {
-    settings_set_kernel_path(arguments[0]);
+    lime_settings_kernel_path = arguments[0];
     return true;
 }
 
@@ -82,20 +92,12 @@ bool command_verbose(char *arguments[]) {
         cli_error("illegal verbosity level '%s'", arguments[0]);
         return false;
     } else {
-        settings_set_verbosity(verbosity);
+        lime_settings_verbosity = verbosity;
         return true;
     }
 }
 
 int main(int argument_count, char *arguments[]) {
-    #if defined(OS_WINDOWS)
-    settings_set_kernel_path("kernel.dll");
-    #else
-    settings_set_kernel_path("kernel.so");
-    #endif
-
-    settings_set_verbosity(0);
-
     cli_parse(commands, sizeof(commands) / sizeof(commands[0]), &arguments[1], argument_count - 1);
     return EXIT_SUCCESS;
 }

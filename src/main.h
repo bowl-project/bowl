@@ -4,7 +4,6 @@
 #include <lime/common.h>
 #include "common/cli.h"
 #include "core/module.h"
-#include "../settings/settings.h"
 
 #define LIME_VM_VERSION "0.0.1-alpha"
 
