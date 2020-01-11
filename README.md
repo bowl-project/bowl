@@ -14,5 +14,6 @@ Contributions of any kind (of course in form of pull requests) are more than wel
 Please note, however, that this project is the virtual machine's core. To contribute functionality to the concatenative programming language refer to one of the following repositories:
 
 * [lime-kernel](https://github.com/kuchenkruste/lime-kernel)
+* [lime-io](https://github.com/kuchenkruste/lime-io)
 
 Extensions to this project, which are meant to be part of the public C API, must be exposed in the interface headers of the [lime-api](https://github.com/kuchenkruste/lime-api) project.
