@@ -1,5 +1,7 @@
 #include "main.h"
 
+const char *lime_settings_boot_path = "boot.lime";
+
 const char *lime_settings_kernel_path =
     #if defined(OS_WINDOWS)
         "kernel.dll"
@@ -63,6 +65,15 @@ static CommandLineFlag commands[] = {
             "order to load the library.",
         .number_of_arguments = 1,
         .function = command_kernel
+    },
+    {
+        .name = "boot",
+        .synonyms = { "b" },
+        .description = 
+            "Specifies the path to the boot file. By default this\n"
+            "flag is set to 'boot.lime'.\n",
+        .number_of_arguments = 1,
+        .function = command_boot
     }
 };
 
@@ -72,7 +83,38 @@ bool command_help(char *arguments[]) {
 }
 
 bool command_execute(char *arguments[]) {
-    execute(arguments[0]);
+    static const char *const handle_sandbox_return = 
+        "drop " // the datastack is not needed, just drop it
+        "dup list:empty equals " // check if the exception is not 'NULL' (the empty list)
+        "\\\"drop\\\" tokens " // if the exception is null drop the saved exception value and do nothing
+        "\\\"throw\\\" tokens " // if the exception is not null rethrow it
+        "boolean:choose " // choose the correct continuation
+        // there are 26 tokens between the 'lift' and 'continue' (excluding 'lift', including 'continue')
+        "lift rot rot list:empty swap list:push swap list:pop rot list:push rot " // pop the continuation and save the datastack and dictionary for later use
+        "swap dup list:length 26 number:subtract 26 list:slice list:concat " // prepare the new callstack
+        "swap list:pop swap list:pop swap drop rot continue " // prepare the continuation and execute it
+        // overwrite the dictionary
+        "lift rot rot drop list:pop rot swap dup list:length 14 number:subtract 14 list:slice swap continue"
+    ;
+
+    static const char *const bootloader = 
+        "\"../lime-io/io.so\" library drop\n" // load the io-library
+        // prepend code that deletes the entire rest of the callstack 
+        "lift swap \"lift swap drop list:empty swap continue\" tokens swap list:concat\n"
+        // prepare the sandbox call
+        "rot rot dup \"run %s\" tokens list:empty list:push \"%s\" io:read tokens list:push swap list:push\n"
+        // prepend the sandbox call to the callstack and continue the execution
+        "swap rot swap list:concat swap rot swap continue"
+    ;
+
+    // TODO: 1) escape user code (such that it is safe to use it inside a string) 2) set it as the new callstack
+    char *const user_code = arguments[0];
+    
+    char buffer[4096 + sizeof(bootloader) - 1 + sizeof(handle_sandbox_return)];
+    sprintf(buffer, bootloader, handle_sandbox_return, lime_settings_boot_path);
+
+    execute(buffer);
+
     return true;
 }
 
@@ -83,6 +125,11 @@ bool command_version(char *arguments[]) {
 
 bool command_kernel(char *arguments[]) {
     lime_settings_kernel_path = arguments[0];
+    return true;
+}
+
+bool command_boot(char *arguments[]) {
+    lime_settings_boot_path = arguments[0];
     return true;
 }
 

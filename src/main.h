@@ -19,4 +19,6 @@ bool command_kernel(char *arguments[]);
 
 bool command_verbose(char *arguments[]);
 
+bool command_boot(char *arguments[]);
+
 #endif

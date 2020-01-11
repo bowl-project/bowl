@@ -605,7 +605,7 @@ void lime_value_dump(FILE *stream, LimeValue value) {
                 break;
 
             case LimeMapValue:
-                fprintf(stream, "[ ");
+                fprintf(stream, "{ ");
 
                 bool first = true;
                 for (u64 i = 0, end = value->map.capacity; i < end; ++i) {
@@ -618,13 +618,11 @@ void lime_value_dump(FILE *stream, LimeValue value) {
                     }
 
                     while (bucket != NULL) {
-                        fprintf(stream, "[ ");
                         lime_value_dump(stream, bucket->list.head);
                         bucket = bucket->list.tail;
-                        fprintf(stream, " ");
+                        fprintf(stream, " : ");
                         lime_value_dump(stream, bucket->list.head);
                         bucket = bucket->list.tail;
-                        fprintf(stream, " ]");
 
                         if (bucket != NULL) {
                             fprintf(stream, " ");
@@ -633,9 +631,9 @@ void lime_value_dump(FILE *stream, LimeValue value) {
                 }
 
                 if (first) {
-                    fprintf(stream, "] map-from-list");
+                    fprintf(stream, "}");
                 } else {
-                    fprintf(stream, " ] map-from-list");
+                    fprintf(stream, " }");
                 }
                 break;
         }
@@ -989,7 +987,7 @@ LimeResult lime_list_reverse(LimeStack stack, LimeValue list) {
 
 LimeResult lime_tokens(LimeStack stack, LimeValue string) {
     LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, string, NULL, NULL);
-    LimeScanner scanner = scanner_from(frame.registers[0]->string.bytes, frame.registers[0]->string.length);
+    LimeScanner scanner = scanner_from(&frame.registers[0]);
     LimeResult result;
 
     while (scanner_has_next(&scanner)) {
@@ -1014,7 +1012,7 @@ LimeResult lime_tokens(LimeStack stack, LimeValue string) {
                     result.value->symbol.length = scanner.token.symbol.length;
                     memcpy(
                         result.value->symbol.bytes, 
-                        frame.registers[0]->symbol.bytes + scanner.token.symbol.start, 
+                        (*scanner.string)->string.bytes + scanner.token.symbol.start, 
                         scanner.token.symbol.length * sizeof(u8)
                     );
                 }
@@ -1026,7 +1024,7 @@ LimeResult lime_tokens(LimeStack stack, LimeValue string) {
                 if (!result.failure) {
                     const u64 length = scanner.token.string.length;
                     const u64 start = scanner.token.string.start;
-                    u8 *const bytes = &frame.registers[0]->symbol.bytes[0];
+                    u8 *const bytes = &((*scanner.string)->string.bytes[0]);
                     u8 *const dst = &result.value->string.bytes[0];
 
                     register bool escaped = false;
@@ -1060,7 +1058,6 @@ LimeResult lime_tokens(LimeStack stack, LimeValue string) {
         }
 
         frame.registers[1] = result.value;
-        scanner.bytes = frame.registers[0]->string.bytes;
     }
 
     return lime_list_reverse(&frame, frame.registers[1]);

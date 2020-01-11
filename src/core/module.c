@@ -107,8 +107,23 @@ LimeValue lime_module_initialize(LimeStack stack, LimeValue library) {
         return lime_exception(&frame, "failed to initialize module 'kernel' in function '%s'", __FUNCTION__);
     } else {
         // bootstrap the first instance 
-        return run->function.function(&frame);
+        LimeValue exception = run->function.function(&frame);
+
+        if (exception != NULL) {
+            return exception;
+        }
+
+        LimeValue unused;
+        LIME_STACK_POP_VALUE(&frame, &unused);
+        LIME_STACK_POP_VALUE(&frame, &exception);
+        LIME_STACK_POP_VALUE(&frame, &unused);
+
+        if (exception != NULL) {
+            return exception;
+        }
     }
+
+    return NULL;
 }
 
 LimeValue lime_module_finalize(LimeStack stack, LimeValue library) {

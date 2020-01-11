@@ -42,8 +42,7 @@ typedef struct {
 } LimeToken;
 
 typedef struct {
-    u8 *bytes;
-    u64 length;
+    LimeValue *string;
     u64 current;
     u64 line;
     u64 column;
@@ -51,7 +50,9 @@ typedef struct {
     LimeToken token;
 } LimeScanner;
 
-LimeScanner scanner_from(u8 *bytes, u64 length);
+#define SCANNER_STARTS_WITH_LITERAL(scanner, literal, offset) ((scanner)->current - (offset) == sizeof(literal) - 1 && memcmp((*(scanner)->string)->string.bytes + (offset), (literal), sizeof(literal) - 1) == 0)
+
+LimeScanner scanner_from(LimeValue *string);
 
 bool scanner_has_next(LimeScanner *scanner);
 

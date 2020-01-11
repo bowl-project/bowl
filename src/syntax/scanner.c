@@ -1,8 +1,20 @@
 #include "scanner.h"
 
+static inline u64 scanner_string_length(LimeScanner *scanner) {
+    return (*scanner->string)->string.length;
+}
+
+static inline bool scanner_is_finished(LimeScanner *scanner) {
+    return scanner->current >= scanner_string_length(scanner);
+}
+
+static inline char scanner_peek(LimeScanner *scanner) {
+    return (*scanner->string)->string.bytes[scanner->current];
+}
+
 static inline void scanner_skip_spaces(LimeScanner *scanner) {
     register char current;
-    while (scanner->current < scanner->length && isspace(current = scanner->bytes[scanner->current])) {
+    while (!scanner_is_finished(scanner) && isspace(current = scanner_peek(scanner))) {
         if (current == '\n') {
             scanner->column = 1;
             ++scanner->line;
@@ -13,21 +25,21 @@ static inline void scanner_skip_spaces(LimeScanner *scanner) {
     }
 }
 
-static u64 scanner_advance_symbol(LimeScanner *scanner) {
+static inline u64 scanner_advance_symbol(LimeScanner *scanner) {
     const u64 start = scanner->current;
-    while (scanner->current < scanner->length && !isspace(scanner->bytes[scanner->current])) {
+    while (!scanner_is_finished(scanner) && !isspace(scanner_peek(scanner))) {
         ++scanner->current;
         ++scanner->column;
     }
     return start;
 }
 
-static u64 scanner_advance_string(LimeScanner *scanner) {
+static inline u64 scanner_advance_string(LimeScanner *scanner) {
     const u64 start = ++scanner->current;
 
     register bool escaped = false;
     register char current;
-    while (scanner->current < scanner->length && ((current = scanner->bytes[scanner->current]) != '"' || escaped)) {
+    while (!scanner_is_finished(scanner) && ((current = scanner_peek(scanner)) != '"' || escaped)) {
         ++scanner->current;
         ++scanner->column;
 
@@ -41,8 +53,8 @@ static u64 scanner_advance_string(LimeScanner *scanner) {
         }
     }
     
-    if (scanner->current >= scanner->length) {
-        return scanner->length;
+    if (scanner_is_finished(scanner)) {
+        return scanner_string_length(scanner);
     } else {
         ++scanner->current;
         ++scanner->column;
@@ -58,13 +70,13 @@ static void scanner_advance(LimeScanner *scanner) {
     scanner->token.column = scanner->column;
     scanner->initialized = true;
 
-    if (scanner->current >= scanner->length) {
+    if (scanner_is_finished(scanner)) {
         scanner->token.type = LimeEndOfStreamToken;
     } else {
-        const char current = scanner->bytes[scanner->current];
-        
+        const char current = scanner_peek(scanner);
+
         if (current >= '0' && current <= '9') {
-            char *const start = (char *) (scanner->bytes + scanner->current);
+            char *const start = (char *) ((*scanner->string)->string.bytes + scanner->current);
             char *end;
 
             scanner->token.type = LimeNumberToken;
@@ -79,7 +91,7 @@ static void scanner_advance(LimeScanner *scanner) {
         } else if (current == '"') {
             const u64 start = scanner_advance_string(scanner);
 
-            if (start == scanner->length) {
+            if (start == scanner_string_length(scanner)) {
                 scanner->token.type = LimeErrorToken;
                 scanner->token.error.message = "unexpected end of string literal";
             } else {
@@ -90,10 +102,10 @@ static void scanner_advance(LimeScanner *scanner) {
         } else {
             const u64 start = scanner_advance_symbol(scanner);
 
-            if (scanner->current - start == sizeof("true") - 1 && !memcmp(scanner->bytes + start, "true", sizeof("true") - 1)) {
+            if (SCANNER_STARTS_WITH_LITERAL(scanner, "true", start)) {
                 scanner->token.type = LimeBooleanToken;
                 scanner->token.boolean.value = true;
-            } else if (scanner->current - start == sizeof("false") - 1 && !memcmp(scanner->bytes + start, "false", sizeof("false") - 1)) {
+            } else if (SCANNER_STARTS_WITH_LITERAL(scanner, "false", start)) {
                 scanner->token.type = LimeBooleanToken;
                 scanner->token.boolean.value = false;
             } else {
@@ -106,10 +118,9 @@ static void scanner_advance(LimeScanner *scanner) {
 
 }
 
-LimeScanner scanner_from(u8 *bytes, u64 length) {
-    LimeScanner result = {
-        .bytes = bytes,
-        .length = length,
+LimeScanner scanner_from(LimeValue *string) {
+    return (LimeScanner) {
+        .string = string,
         .current = 0,
         .line = 1,
         .column = 1,
@@ -120,8 +131,6 @@ LimeScanner scanner_from(u8 *bytes, u64 length) {
             .column = 1
         }
     };
-
-    return result;
 }
 
 bool scanner_has_next(LimeScanner *scanner) {

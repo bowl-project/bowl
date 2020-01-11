@@ -10,6 +10,9 @@
     lime_register_function;
     lime_settings_verbosity;
     lime_settings_kernel_path;
+    lime_settings_boot_path;
+    lime_list_reverse;
+    lime_tokens;
     lime_type_name;
     lime_map_delete;
     lime_map_merge;
