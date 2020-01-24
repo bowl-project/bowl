@@ -104,6 +104,15 @@ LimeValue lime_collect_garbage(LimeStack stack) {
                     value->map.buckets[i] = gc_relocate(value->map.buckets[i]);
                 }
                 break;
+            case LimeVectorValue:
+                for (u64 i = 0, end = value->vector.length; i < end; ++i) {
+                    value->vector.elements[i] = gc_relocate(value->vector.elements[i]);
+                }
+                break;
+            case LimeExceptionValue:
+                value->exception.cause = gc_relocate(value->exception.cause);
+                value->exception.message = gc_relocate(value->exception.message);
+                break;
             default:
                 // not a compound type
                 break;

@@ -225,7 +225,8 @@ LimeLibraryResult library_open(LimeStack stack, LimeValue library) {
     #endif
 
     if (handle == NULL) {
-        result.exception = lime_exception(&frame, "failed to load library '%s'", (char *) path);
+        LimeResult temporary = lime_format_exception(&frame, "failed to load library '%s'", (char *) path);
+        result.exception = temporary.value;
         result.failure = true;
         free(path);
         return result;
@@ -250,7 +251,8 @@ LimeLibraryResult library_open(LimeStack stack, LimeValue library) {
     #endif
 
     if (initialize == NULL) {
-        result.exception = lime_exception(&frame, "failed to load library '%s'", path);
+        LimeResult temporary = lime_format_exception(&frame, "failed to load library '%s'", path);
+        result.exception = temporary.exception;
         result.failure = true;
         return result;
     }

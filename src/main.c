@@ -87,7 +87,7 @@ bool command_execute(char *arguments[]) {
         "drop " // the datastack is not needed, just drop it
         "dup list:empty equals " // check if the exception is not 'NULL' (the empty list)
         "\\\"drop\\\" tokens " // if the exception is null drop the saved exception value and do nothing
-        "\\\"throw\\\" tokens " // if the exception is not null rethrow it
+        "\\\"trigger\\\" tokens " // if the exception is not null rethrow it
         "boolean:choose " // choose the correct continuation
         // there are 26 tokens between the 'lift' and 'continue' (excluding 'lift', including 'continue')
         "lift rot rot list:empty swap list:push swap list:pop rot list:push rot " // pop the continuation and save the datastack and dictionary for later use

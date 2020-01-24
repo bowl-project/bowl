@@ -1,10 +1,24 @@
 #include "module.h"
 
 static void fail(LimeValue exception) {
-    fprintf(stderr, "[exception] ");
-    lime_value_dump(stderr, exception);
-    fprintf(stderr, "\n");
-    fflush(stderr);
+    bool first = true;
+
+    while (exception != NULL) {
+        if (first) {
+            first = false;
+            fprintf(stderr, "[exception] ");
+        } else {
+            fprintf(stderr, "  caused by ");
+        }
+        lime_value_dump(stderr, exception->exception.message);
+        fprintf(stderr, "\n");
+        fflush(stderr);
+        exception = exception->exception.cause;
+    }
+
+    // call finalize to clean things up
+    lime_module_finalize(NULL, NULL);
+
     exit(EXIT_FAILURE);
 }
 
@@ -38,27 +52,22 @@ void execute(char *program) {
 
     callstack = result.value;
 
-    const LimeValue initialize_exception = lime_module_initialize(&stack, NULL);
-    const LimeValue finalize_exception = lime_module_finalize(&stack, NULL);
-    
-    if (initialize_exception != NULL) {
-        fail(initialize_exception);
-    } else if (finalize_exception != NULL) {
-        fail(finalize_exception);
+    LimeValue exception = lime_module_initialize(&stack, NULL);
+
+    if (exception != NULL) {
+        fail(exception);
+    }
+
+    exception = lime_module_finalize(&stack, NULL);
+
+    if (exception != NULL) {
+        fail(exception);
     }
 }
 
 LimeValue lime_module_initialize(LimeStack stack, LimeValue library) {
-    static struct lime_value run_symbol = {
-        .type = LimeSymbolValue,
-        .location = NULL,
-        .hash = 0,
-        .symbol = {
-            .length = 3,
-            .bytes = "run"
-        }
-    };
-
+    LIME_STATIC_SYMBOL(run_symbol, "run");
+   
     LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
 
     // set up the dictionary
@@ -101,10 +110,10 @@ LimeValue lime_module_initialize(LimeStack stack, LimeValue library) {
     *frame.datastack = result.value;
 
     // the function 'run' should be present in the dictionary by now
-    const LimeValue run = lime_map_get_or_else(*frame.dictionary, &run_symbol, lime_sentinel_value);
+    const LimeValue run = lime_map_get_or_else(*frame.dictionary, &run_symbol.value, lime_sentinel_value);
 
     if (run == lime_sentinel_value) {
-        return lime_exception(&frame, "failed to initialize module 'kernel' in function '%s'", __FUNCTION__);
+        return lime_format_exception(&frame, "failed to initialize module 'kernel' in function '%s'", __FUNCTION__).value;
     } else {
         // bootstrap the first instance 
         LimeValue exception = run->function.function(&frame);

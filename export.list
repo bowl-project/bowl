@@ -26,6 +26,8 @@
     lime_value_length;
     lime_value_type;
     lime_exception;
+    lime_format_exception;
+    lime_vector;
     lime_allocate;
     lime_symbol;
     lime_string;

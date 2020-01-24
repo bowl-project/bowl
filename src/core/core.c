@@ -1,41 +1,32 @@
 #include "core.h"
 
-static struct lime_value lime_exception_out_of_heap_internal = {
-    .type = LimeStringValue,
+LIME_STATIC_STRING(lime_exception_out_of_heap_message, "out of heap memory");
+LIME_STATIC_STRING(lime_exception_finalization_failure_message, "finalization failed");
+LIME_STATIC_STRING(lime_sentinel_value_internal, "");
+
+static struct lime_value lime_exception_out_of_heap_value = {
+    .type = LimeExceptionValue,
     .location = NULL,
     .hash = 0,
-    .symbol = {
-        .length = 18,
-        .bytes = "out of heap memory"
+    .exception = {
+        .cause = NULL,
+        .message = &lime_exception_out_of_heap_message.value
     }
 };
 
-static struct lime_value lime_exception_finalization_failure_internal = {
-    .type = LimeStringValue,
+static struct lime_value lime_exception_finalization_failure_value = {
+    .type = LimeExceptionValue,
     .location = NULL,
     .hash = 0,
-    .symbol = {
-        .length = 19,
-        .bytes = "finalization failed"
+    .exception = {
+        .cause = NULL,
+        .message = &lime_exception_finalization_failure_message.value
     }
 };
 
-static struct lime_value lime_sentinel_value_internal = {
-    .type = LimeStringValue,
-    .location = NULL,
-    .hash = 0,
-    .symbol = {
-        .length = 0,
-        .bytes = ""
-    }
-};
-
-const LimeValue lime_exception_out_of_heap = &lime_exception_out_of_heap_internal;
-
-const LimeValue lime_exception_finalization_failure = &lime_exception_finalization_failure_internal;
-
-const LimeValue lime_sentinel_value = &lime_sentinel_value_internal;
-
+const LimeValue lime_exception_out_of_heap = &lime_exception_out_of_heap_value;
+const LimeValue lime_exception_finalization_failure = &lime_exception_finalization_failure_value;
+const LimeValue lime_sentinel_value = &lime_sentinel_value_internal.value;
 
 static LimeResult lime_map_insert(LimeStack stack, LimeValue bucket, LimeValue key, LimeValue value) {
     LimeStackFrame arguments = LIME_ALLOCATE_STACK_FRAME(stack, bucket, key, value);
@@ -398,6 +389,17 @@ u64 lime_value_hash(LimeValue value) {
                     value->hash += lime_value_hash(value->map.buckets[i]) * 31;
                 }
                 break;
+
+            case LimeVectorValue:
+                for (u64 i = 0, end = value->vector.length; i < end; ++i) {
+                    value->hash += lime_value_hash(value->vector.elements[i]) * 31;
+                }
+                break;
+
+            case LimeExceptionValue:
+                value->hash += lime_value_hash(value->exception.cause) * 31;
+                value->hash += lime_value_hash(value->exception.message) * 31;
+                break;
         }
     }
 
@@ -453,6 +455,22 @@ bool lime_value_equals(LimeValue a, LimeValue b) {
             case LimeLibraryValue:
                 return a->library.handle == b->library.handle;
 
+            case LimeVectorValue:
+                if (a->vector.length != b->vector.length) {
+                    return false;
+                }
+
+                {
+                    const u64 length = a->vector.length;
+                    for (register u64 i = 0; i < length; ++i) {
+                        if (!lime_value_equals(a->vector.elements[i], b->vector.elements[i])) {
+                            return false;
+                        }
+                    }
+                }
+
+                return true;
+
             case LimeListValue:
                 if (a->list.length != b->list.length) {
                     return false;
@@ -475,6 +493,10 @@ bool lime_value_equals(LimeValue a, LimeValue b) {
                 }
 
                 return lime_map_subset_of(a, b) && lime_map_subset_of(b, a);
+
+            case LimeExceptionValue:
+                return lime_value_equals(a->exception.message, b->exception.message) 
+                    && lime_value_equals(a->exception.cause, b->exception.cause);
         }
     }
 }
@@ -518,6 +540,8 @@ u64 lime_value_byte_size(LimeValue value) {
                 return sizeof(struct lime_value) + value->library.length * sizeof(u8);
             case LimeMapValue:
                 return sizeof(struct lime_value) + value->map.capacity * sizeof(LimeValue);
+            case LimeVectorValue:
+                return sizeof(struct lime_value) + value->vector.length * sizeof(LimeValue);
             default:
                 return sizeof(struct lime_value);
         }
@@ -575,6 +599,15 @@ void lime_value_dump(FILE *stream, LimeValue value) {
                 fprintf(stream, "library#0x%08" PRIX64, (u64) value->library.handle);
                 break;
 
+            case LimeVectorValue:
+                fprintf(stream, "(");
+                for (u64 i = 0; i < value->vector.length; ++i) {
+                    fprintf(stream, " ");
+                    lime_value_dump(stream, value->vector.elements[i]);
+                }
+                fprintf(stream, " )");
+                break;
+
             case LimeListValue:
                 fprintf(stream, "[ ");
 
@@ -587,6 +620,11 @@ void lime_value_dump(FILE *stream, LimeValue value) {
                 } while (value != NULL);
 
                 fprintf(stream, " ]");
+                break;
+
+            case LimeExceptionValue:
+                lime_value_dump(stream, value->exception.message);
+                fprintf(stream, " exception");
                 break;
 
             case LimeStringValue:
@@ -713,6 +751,27 @@ static void lime_value_show_buffer(LimeValue value, char **buffer, u64 *length, 
                     }
                 }
                 break;
+
+            case LimeVectorValue:
+                if (!lime_value_printf_buffer(buffer, length, capacity, "(")) {
+                    return;
+                }
+
+                for (u64 i = 0; i < value->vector.length; ++i) {
+                    if (!lime_value_printf_buffer(buffer, length, capacity, " ")) {
+                        return;
+                    }
+
+                    lime_value_show_buffer(value->vector.elements[i], buffer, length, capacity);
+                    if (*buffer == NULL) {
+                        return;
+                    }
+                }
+
+                if (!lime_value_printf_buffer(buffer, length, capacity, " )")) {
+                    return;
+                }
+                break;
             
             case LimeBooleanValue:
                 if (value->boolean.value) {
@@ -757,6 +816,18 @@ static void lime_value_show_buffer(LimeValue value, char **buffer, u64 *length, 
                 } while (value != NULL);
 
                 if (!lime_value_printf_buffer(buffer, length, capacity, " ]")) {
+                    return;
+                }
+                break;
+
+            case LimeExceptionValue:
+                lime_value_show_buffer(value->exception.message, buffer, length, capacity);
+
+                if (*buffer == NULL) {
+                    return;
+                }
+
+                if (!lime_value_printf_buffer(buffer, length, capacity, " exception")) {
                     return;
                 }
                 break;
@@ -870,6 +941,8 @@ u64 lime_value_length(LimeValue value) {
                 return value->map.length;
             case LimeStringValue: 
                 return value->string.length;
+            case LimeVectorValue: 
+                return value->vector.length;
             default: 
                 return 0;
         }
@@ -885,7 +958,9 @@ char *lime_type_name(LimeValueType type) {
         [LimeBooleanValue] = "boolean",
         [LimeNumberValue]  = "number",
         [LimeStringValue]  = "string",
-        [LimeLibraryValue] = "library"
+        [LimeLibraryValue] = "library",
+        [LimeVectorValue]  = "vector",
+        [LimeExceptionValue]  = "exception"
     };
 
     return types[type];
@@ -906,14 +981,15 @@ char *lime_string_to_null_terminated(LimeValue value) {
     return path;
 }
 
-LimeValue lime_exception(LimeStack stack, char *message, ...) {
-    static struct lime_value exception = {
-        .type = LimeStringValue,
+LimeResult lime_format_exception(LimeStack stack, char *message, ...) {
+    LIME_STATIC_STRING(exception_message, "failed to format exception message in function 'lime_format_exception'");
+    struct lime_value exception = {
+        .type = LimeExceptionValue,
         .location = NULL,
         .hash = 0,
-        .string = {
-            .length = 63,
-            .bytes = "failed to format exception message in function 'lime_exception'"
+        .exception = {
+            .cause = NULL,
+            .message = &exception_message.value
         }
     };
     va_list list;
@@ -931,13 +1007,14 @@ LimeValue lime_exception(LimeStack stack, char *message, ...) {
         va_end(list);
 
         if (written < 0 || written >= required + 1) {
-            return &exception;
-        } else {
-            return result.value;
+            result.value = &exception;
+            result.failure = false;
         }
-    } else {
-        return result.exception;
+
+        result = lime_exception(stack, NULL, result.value);
     }
+
+    return result;
 }
 
 LimeResult lime_allocate(LimeStack stack, LimeValueType type, u64 additional) {
@@ -993,8 +1070,8 @@ LimeResult lime_tokens(LimeStack stack, LimeValue string) {
     while (scanner_has_next(&scanner)) {
         switch (scanner_next(&scanner)) {
             case LimeErrorToken:
+                result = lime_format_exception(&frame, "%s in line %" PRId64 " at character %" PRId64, scanner.token.error.message, scanner.token.line, scanner.token.column);
                 result.failure = true;
-                result.exception = lime_exception(&frame, "%s in line %" PRId64 " at character %" PRId64, scanner.token.error.message, scanner.token.line, scanner.token.column);
                 return result;
 
             case LimeBooleanToken:
@@ -1180,3 +1257,29 @@ LimeResult lime_boolean(LimeStack stack, bool value) {
     return result;
 }
 
+LimeResult lime_vector(LimeStack stack, LimeValue value, u64 const length) {
+    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, value, NULL, NULL);
+    LimeResult result = gc_allocate(&frame, LimeVectorValue, length * sizeof(LimeValue));
+
+    if (!result.failure) {
+        result.value->vector.length = length;
+        
+        for (register u64 i = 0; i < length; ++i) {
+            result.value->vector.elements[i] = frame.registers[0];
+        }
+    }
+
+    return result;
+}
+
+LimeResult lime_exception(LimeStack stack, LimeValue cause, LimeValue message) {
+    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, cause, message, NULL);
+    LimeResult result = gc_allocate(&frame, LimeExceptionValue, 0);
+
+    if (!result.failure) {
+        result.value->exception.cause = frame.registers[0];
+        result.value->exception.message = frame.registers[1];
+    }
+
+    return result;
+}
