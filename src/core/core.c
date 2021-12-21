@@ -1,59 +1,50 @@
 #include "core.h"
 
-static struct lime_value lime_exception_out_of_heap_internal = {
-    .type = LimeStringValue,
+BOWL_STATIC_STRING(bowl_exception_out_of_heap_message, "out of heap memory");
+BOWL_STATIC_STRING(bowl_exception_finalization_failure_message, "finalization failed");
+BOWL_STATIC_STRING(bowl_sentinel_value_internal, "");
+
+static struct bowl_value bowl_exception_out_of_heap_value = {
+    .type = BowlExceptionValue,
     .location = NULL,
     .hash = 0,
-    .symbol = {
-        .length = 18,
-        .bytes = "out of heap memory"
+    .exception = {
+        .cause = NULL,
+        .message = &bowl_exception_out_of_heap_message.value
     }
 };
 
-static struct lime_value lime_exception_finalization_failure_internal = {
-    .type = LimeStringValue,
+static struct bowl_value bowl_exception_finalization_failure_value = {
+    .type = BowlExceptionValue,
     .location = NULL,
     .hash = 0,
-    .symbol = {
-        .length = 19,
-        .bytes = "finalization failed"
+    .exception = {
+        .cause = NULL,
+        .message = &bowl_exception_finalization_failure_message.value
     }
 };
 
-static struct lime_value lime_sentinel_value_internal = {
-    .type = LimeStringValue,
-    .location = NULL,
-    .hash = 0,
-    .symbol = {
-        .length = 0,
-        .bytes = ""
-    }
-};
+const BowlValue bowl_exception_out_of_heap = &bowl_exception_out_of_heap_value;
+const BowlValue bowl_exception_finalization_failure = &bowl_exception_finalization_failure_value;
+const BowlValue bowl_sentinel_value = &bowl_sentinel_value_internal.value;
 
-const LimeValue lime_exception_out_of_heap = &lime_exception_out_of_heap_internal;
-
-const LimeValue lime_exception_finalization_failure = &lime_exception_finalization_failure_internal;
-
-const LimeValue lime_sentinel_value = &lime_sentinel_value_internal;
-
-
-static LimeResult lime_map_insert(LimeStack stack, LimeValue bucket, LimeValue key, LimeValue value) {
-    LimeStackFrame arguments = LIME_ALLOCATE_STACK_FRAME(stack, bucket, key, value);
-    LimeStackFrame variables = LIME_ALLOCATE_STACK_FRAME(&arguments, NULL, NULL, NULL);
-    LimeResult result;
+static BowlResult bowl_map_insert(BowlStack stack, BowlValue bucket, BowlValue key, BowlValue value) {
+    BowlStackFrame arguments = BOWL_ALLOCATE_STACK_FRAME(stack, bucket, key, value);
+    BowlStackFrame variables = BOWL_ALLOCATE_STACK_FRAME(&arguments, NULL, NULL, NULL);
+    BowlResult result;
     bool found = false;
 
     variables.registers[0] = NULL;
     while (arguments.registers[0] != NULL) {
-        if (!found && lime_value_equals(arguments.registers[1], arguments.registers[0]->list.head)) {
-            result = lime_list(&variables, arguments.registers[2], variables.registers[0]);
+        if (!found && bowl_value_equals(arguments.registers[1], arguments.registers[0]->list.head)) {
+            result = bowl_list(&variables, arguments.registers[2], variables.registers[0]);
 
             if (result.failure) {
                 return result;
             }
 
             variables.registers[0] = result.value;
-            result = lime_list(&variables, arguments.registers[1], variables.registers[0]);
+            result = bowl_list(&variables, arguments.registers[1], variables.registers[0]);
 
             if (result.failure) {
                 return result;
@@ -62,14 +53,14 @@ static LimeResult lime_map_insert(LimeStack stack, LimeValue bucket, LimeValue k
             variables.registers[0] = result.value;
             found = true;
         } else {
-            result = lime_list(&variables, arguments.registers[0]->list.tail->list.head, variables.registers[0]);
+            result = bowl_list(&variables, arguments.registers[0]->list.tail->list.head, variables.registers[0]);
 
             if (result.failure) {
                 return result;
             }
 
             variables.registers[0] = result.value;
-            result = lime_list(&variables, arguments.registers[0]->list.head, variables.registers[0]);
+            result = bowl_list(&variables, arguments.registers[0]->list.head, variables.registers[0]);
 
             if (result.failure) {
                 return result;
@@ -82,14 +73,14 @@ static LimeResult lime_map_insert(LimeStack stack, LimeValue bucket, LimeValue k
     }
 
     if (!found) {
-        result = lime_list(&variables, arguments.registers[2], variables.registers[0]);
+        result = bowl_list(&variables, arguments.registers[2], variables.registers[0]);
 
         if (result.failure) {
             return result;
         }
 
         variables.registers[0] = result.value;
-        result = lime_list(&variables, arguments.registers[1], variables.registers[0]);
+        result = bowl_list(&variables, arguments.registers[1], variables.registers[0]);
 
         if (result.failure) {
             return result;
@@ -102,24 +93,24 @@ static LimeResult lime_map_insert(LimeStack stack, LimeValue bucket, LimeValue k
     return result;
 }
 
-LimeValue lime_register_function(LimeStack stack, char *name, LimeValue library, LimeFunction function) {
-    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
-    LimeResult result;
+BowlValue bowl_register_function(BowlStack stack, char *name, BowlValue library, BowlFunction function) {
+    BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
+    BowlResult result;
 
-    result = lime_symbol(&frame, (u8*) name, strlen(name));
+    result = bowl_symbol(&frame, (u8*) name, strlen(name));
 
     if (result.failure) {
         return result.exception;
     }
 
     frame.registers[1] = result.value;
-    result = lime_function(&frame, frame.registers[0], function);
+    result = bowl_function(&frame, frame.registers[0], function);
 
     if (result.failure) {
         return result.exception;
     }
 
-    result = lime_map_put(&frame, *frame.dictionary, frame.registers[1], result.value);
+    result = bowl_map_put(&frame, *frame.dictionary, frame.registers[1], result.value);
 
     if (result.failure) {
         return result.exception;
@@ -130,12 +121,12 @@ LimeValue lime_register_function(LimeStack stack, char *name, LimeValue library,
     return NULL;
 }
 
-LimeValue lime_map_get_or_else(LimeValue map, LimeValue key, LimeValue otherwise) {
-    const u64 index = lime_value_hash(key) % map->map.capacity;
-    LimeValue bucket = map->map.buckets[index];
+BowlValue bowl_map_get_or_else(BowlValue map, BowlValue key, BowlValue otherwise) {
+    const u64 index = bowl_value_hash(key) % map->map.capacity;
+    BowlValue bucket = map->map.buckets[index];
 
     while (bucket != NULL) {
-        if (lime_value_equals(key, bucket->list.head)) {
+        if (bowl_value_equals(key, bucket->list.head)) {
             return bucket->list.tail->list.head;
         }
 
@@ -145,12 +136,128 @@ LimeValue lime_map_get_or_else(LimeValue map, LimeValue key, LimeValue otherwise
     return otherwise;
 }
 
-LimeResult lime_map_put(LimeStack stack, LimeValue map, LimeValue key, LimeValue value) {
+BowlResult bowl_map_merge(BowlStack stack, BowlValue a, BowlValue b) {
+    BowlStackFrame arguments = BOWL_ALLOCATE_STACK_FRAME(stack, a, b, NULL);
+    BowlStackFrame variables = BOWL_ALLOCATE_STACK_FRAME(&arguments, NULL, NULL, NULL);
+    BowlResult result = bowl_map(&variables, (u64) ((arguments.registers[0]->map.capacity + arguments.registers[1]->map.capacity) * (4.0 / 3.0)));
+    
+    if (result.failure) {
+        return result;
+    }
+
+    arguments.registers[2] = result.value;
+
+    // add the first map
+    for (u64 i = 0; i < arguments.registers[0]->map.capacity; ++i) {
+        variables.registers[0] = arguments.registers[0]->map.buckets[i];
+
+        while (variables.registers[0] != NULL) {
+            result = bowl_map_put(&variables, arguments.registers[2], variables.registers[0]->list.head, variables.registers[0]->list.tail->list.head);
+
+            if (result.failure) {
+                return result;
+            }
+            
+            arguments.registers[2] = result.value;
+            variables.registers[0] = variables.registers[0]->list.tail->list.tail;
+        }
+    }
+
+    // add the second map
+    for (u64 i = 0; i < arguments.registers[1]->map.capacity; ++i) {
+        variables.registers[0] = arguments.registers[1]->map.buckets[i];
+
+        while (variables.registers[0] != NULL) {
+            result = bowl_map_put(&variables, arguments.registers[2], variables.registers[0]->list.head, variables.registers[0]->list.tail->list.head);
+            
+            if (result.failure) {
+                return result;
+            }
+                
+            arguments.registers[2] = result.value;
+            variables.registers[0] = variables.registers[0]->list.tail->list.tail;
+        }
+    }
+
+    result.value = arguments.registers[2];
+    result.failure = false;
+
+    return result;
+}
+
+static BowlResult bowl_map_delete_at(BowlStack stack, BowlValue map, u64 bucket, u64 index) {
+    BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, map, NULL, NULL);
+    BowlResult result;
+
+    result = bowl_value_clone(&frame, frame.registers[0]);
+
+    if (result.failure) {
+        return result;
+    }
+
+    frame.registers[0] = result.value;
+
+    frame.registers[1] = frame.registers[0]->map.buckets[bucket];
+    u64 current = 0;
+    while (frame.registers[1] != NULL) {
+        if (index != current) {
+            result = bowl_list(&frame, frame.registers[1]->list.tail->list.head, frame.registers[2]);
+
+            if (result.failure) {
+                return result;
+            }
+
+            frame.registers[2] = result.value;
+            result = bowl_list(&frame, frame.registers[1]->list.head, frame.registers[2]);
+
+            if (result.failure) {
+                return result;
+            }
+
+            frame.registers[2] = result.value;
+        }
+
+        frame.registers[1] = frame.registers[1]->list.tail->list.tail;
+        ++current;
+    }
+
+    frame.registers[0]->map.buckets[bucket] = frame.registers[2];
+    result.value = frame.registers[0];
+    result.failure = false;
+
+    return result;
+}
+
+BowlResult bowl_map_delete(BowlStack stack, BowlValue map, BowlValue key) {
+    BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, map, key, NULL);
+
+    const u64 index = bowl_value_hash(frame.registers[1]) % frame.registers[0]->map.capacity;
+
+    frame.registers[2] = frame.registers[0]->map.buckets[index];
+    u64 current = 0;
+    while (frame.registers[2] != NULL) {
+        if (bowl_value_equals(frame.registers[2]->list.head, frame.registers[1])) {
+            return bowl_map_delete_at(&frame, frame.registers[0], index, current);
+        }
+
+        frame.registers[2] = frame.registers[2]->list.tail->list.tail;
+        ++current;
+    }
+
+    BowlResult result = {
+        .value = frame.registers[0],
+        .failure = false
+    };
+
+    return result;
+}
+
+BowlResult bowl_map_put(BowlStack stack, BowlValue map, BowlValue key, BowlValue value) {
     static const double load_factor = 0.75;
 
-    LimeStackFrame arguments = LIME_ALLOCATE_STACK_FRAME(stack, map, key, value);
-    LimeStackFrame variables = LIME_ALLOCATE_STACK_FRAME(&arguments, NULL, NULL, NULL);
-    LimeResult result;
+    BowlStackFrame arguments = BOWL_ALLOCATE_STACK_FRAME(stack, map, key, value);
+    BowlStackFrame variables = BOWL_ALLOCATE_STACK_FRAME(&arguments, NULL, NULL, NULL);
+    BowlResult result;
 
     // resize capacity if it exceeds the load factor
     u64 capacity = arguments.registers[0]->map.capacity;
@@ -159,7 +266,7 @@ LimeResult lime_map_put(LimeStack stack, LimeValue map, LimeValue key, LimeValue
     }
 
     // copy the buckets
-    result = lime_map(&variables, capacity);
+    result = bowl_map(&variables, capacity);
     if (result.failure) {
         return result;
     }
@@ -173,8 +280,8 @@ LimeResult lime_map_put(LimeStack stack, LimeValue map, LimeValue key, LimeValue
                 variables.registers[2] = variables.registers[1]->list.head;
                 variables.registers[1] = variables.registers[1]->list.tail;
 
-                const u64 index = lime_value_hash(variables.registers[2]) % capacity;
-                result = lime_map_insert(
+                const u64 index = bowl_value_hash(variables.registers[2]) % capacity;
+                result = bowl_map_insert(
                     &variables,
                     variables.registers[0]->map.buckets[index],
                     variables.registers[2],
@@ -196,10 +303,10 @@ LimeResult lime_map_put(LimeStack stack, LimeValue map, LimeValue key, LimeValue
     }
 
     // insert the new key-value pair
-    const u64 index = lime_value_hash(arguments.registers[1]) % capacity;
-    const u64 length = lime_value_length(variables.registers[0]->map.buckets[index]);
+    const u64 index = bowl_value_hash(arguments.registers[1]) % capacity;
+    const u64 length = bowl_value_length(variables.registers[0]->map.buckets[index]);
 
-    result = lime_map_insert(
+    result = bowl_map_insert(
         &variables, 
         variables.registers[0]->map.buckets[index], 
         arguments.registers[1], 
@@ -212,7 +319,7 @@ LimeResult lime_map_put(LimeStack stack, LimeValue map, LimeValue key, LimeValue
 
     variables.registers[0]->map.buckets[index] = result.value;
 
-    if (lime_value_length(result.value) > length) {
+    if (bowl_value_length(result.value) > length) {
         variables.registers[0]->map.length += 1;
     }
 
@@ -221,7 +328,7 @@ LimeResult lime_map_put(LimeStack stack, LimeValue map, LimeValue key, LimeValue
     return result;
 }
 
-bool lime_library_is_loaded(char *path) {
+bool bowl_library_is_loaded(char *path) {
     #if defined(OS_UNIX)
         void *handle = dlopen(path, RTLD_LAZY | RTLD_NOLOAD);
         if (handle != NULL) {
@@ -237,50 +344,61 @@ bool lime_library_is_loaded(char *path) {
     #endif
 }
 
-u64 lime_value_hash(LimeValue value) {
+u64 bowl_value_hash(BowlValue value) {
     if (value == NULL) {
         return 31;
     } else if (value->hash == 0) {
         value->hash = 31;
 
         switch (value->type) {
-            case LimeSymbolValue:
+            case BowlSymbolValue:
                 for (u64 i = 0, end = value->symbol.length; i < end; ++i) {
                     value->hash += pow(value->symbol.bytes[i] * 31, end - (i + 1));
                 }
                 break;
 
-            case LimeNumberValue:
+            case BowlNumberValue:
                 value->hash += *((u64 *) (&value->number.value)) * 31;
                 break;
 
-            case LimeBooleanValue:
+            case BowlBooleanValue:
                 value->hash = value->boolean.value ? 7 : 31;
                 break;
 
-            case LimeStringValue:
+            case BowlStringValue:
                 for (u64 i = 0, end = value->string.length; i < end; ++i) {
                     value->hash += pow(value->string.bytes[i] * 31, end - (i + 1));
                 }
                 break;
 
-            case LimeNativeValue:
+            case BowlNativeValue:
                 value->hash += (u64) value->function.function * 31;
                 break;
 
-            case LimeLibraryValue:
+            case BowlLibraryValue:
                 value->hash += (u64) value->library.handle * 31;
                 break;
 
-            case LimeListValue:
-                value->hash += lime_value_hash(value->list.head) * 31;
-                value->hash += lime_value_hash(value->list.tail) * 31;
+            case BowlListValue:
+                value->hash += bowl_value_hash(value->list.head) * 31;
+                value->hash += bowl_value_hash(value->list.tail) * 31;
                 break;
 
-            case LimeMapValue:
+            case BowlMapValue:
                 for (u64 i = 0, end = value->map.capacity; i < end; ++i) {
-                    value->hash += lime_value_hash(value->map.buckets[i]) * 31;
+                    value->hash += bowl_value_hash(value->map.buckets[i]) * 31;
                 }
+                break;
+
+            case BowlVectorValue:
+                for (u64 i = 0, end = value->vector.length; i < end; ++i) {
+                    value->hash += bowl_value_hash(value->vector.elements[i]) * 31;
+                }
+                break;
+
+            case BowlExceptionValue:
+                value->hash += bowl_value_hash(value->exception.cause) * 31;
+                value->hash += bowl_value_hash(value->exception.message) * 31;
                 break;
         }
     }
@@ -288,7 +406,7 @@ u64 lime_value_hash(LimeValue value) {
     return value->hash;
 }
 
-bool lime_value_equals(LimeValue a, LimeValue b) {
+bool bowl_value_equals(BowlValue a, BowlValue b) {
     if (a == b) {
         return true;
     } else if (a == NULL || b == NULL) {
@@ -299,7 +417,7 @@ bool lime_value_equals(LimeValue a, LimeValue b) {
         return false;
     } else {
         switch (a->type) {
-            case LimeSymbolValue:
+            case BowlSymbolValue:
                 if (a->symbol.length != b->symbol.length) {
                     return false;
                 }
@@ -312,13 +430,13 @@ bool lime_value_equals(LimeValue a, LimeValue b) {
 
                 return true;
 
-            case LimeNumberValue:
+            case BowlNumberValue:
                 return a->number.value == b->number.value;
 
-            case LimeBooleanValue:
+            case BowlBooleanValue:
                 return a->boolean.value == b->boolean.value;
 
-            case LimeStringValue:
+            case BowlStringValue:
                 if (a->string.length != b->string.length) {
                     return false;
                 }
@@ -331,19 +449,35 @@ bool lime_value_equals(LimeValue a, LimeValue b) {
 
                 return true;
 
-            case LimeNativeValue:
+            case BowlNativeValue:
                 return a->function.function == b->function.function;
 
-            case LimeLibraryValue:
+            case BowlLibraryValue:
                 return a->library.handle == b->library.handle;
 
-            case LimeListValue:
+            case BowlVectorValue:
+                if (a->vector.length != b->vector.length) {
+                    return false;
+                }
+
+                {
+                    const u64 length = a->vector.length;
+                    for (register u64 i = 0; i < length; ++i) {
+                        if (!bowl_value_equals(a->vector.elements[i], b->vector.elements[i])) {
+                            return false;
+                        }
+                    }
+                }
+
+                return true;
+
+            case BowlListValue:
                 if (a->list.length != b->list.length) {
                     return false;
                 }
 
                 do {
-                    if (!lime_value_equals(a->list.head, b->list.head)) {
+                    if (!bowl_value_equals(a->list.head, b->list.head)) {
                         return false;
                     }
 
@@ -353,32 +487,36 @@ bool lime_value_equals(LimeValue a, LimeValue b) {
 
                 return true;
 
-            case LimeMapValue:
+            case BowlMapValue:
                 if (a->map.length != b->map.length) {
                     return false;
                 }
 
-                return lime_map_subset_of(a, b) && lime_map_subset_of(b, a);
+                return bowl_map_subset_of(a, b) && bowl_map_subset_of(b, a);
+
+            case BowlExceptionValue:
+                return bowl_value_equals(a->exception.message, b->exception.message) 
+                    && bowl_value_equals(a->exception.cause, b->exception.cause);
         }
     }
 }
 
-bool lime_map_subset_of(LimeValue superset, LimeValue subset) {
+bool bowl_map_subset_of(BowlValue superset, BowlValue subset) {
     if (subset->map.length > superset->map.length) {
         return false;
     }
 
     for (u64 i = 0, end = subset->map.capacity; i < end; ++i) {
-        LimeValue bucket = subset->map.buckets[i];
+        BowlValue bucket = subset->map.buckets[i];
 
         while (bucket != NULL) {
-            const LimeValue result = lime_map_get_or_else(superset, bucket->list.head, lime_sentinel_value);
+            const BowlValue result = bowl_map_get_or_else(superset, bucket->list.head, bowl_sentinel_value);
 
             bucket = bucket->list.tail;
 
-            if (result == lime_sentinel_value) {
+            if (result == bowl_sentinel_value) {
                 return false;
-            } else if (!lime_value_equals(bucket->list.head, result)) {
+            } else if (!bowl_value_equals(bucket->list.head, result)) {
                 return false;
             }
 
@@ -389,26 +527,28 @@ bool lime_map_subset_of(LimeValue superset, LimeValue subset) {
     return true;
 }
 
-u64 lime_value_byte_size(LimeValue value) {
+u64 bowl_value_byte_size(BowlValue value) {
     if (value == NULL) {
         return 0;
     } else {
         switch (value->type) {
-            case LimeSymbolValue:
-                return sizeof(struct lime_value) + value->symbol.length * sizeof(u8);
-            case LimeStringValue:
-                return sizeof(struct lime_value) + value->string.length * sizeof(u8);
-            case LimeLibraryValue:
-                return sizeof(struct lime_value) + value->library.length * sizeof(u8);
-            case LimeMapValue:
-                return sizeof(struct lime_value) + value->map.capacity * sizeof(LimeValue);
+            case BowlSymbolValue:
+                return sizeof(struct bowl_value) + value->symbol.length * sizeof(u8);
+            case BowlStringValue:
+                return sizeof(struct bowl_value) + value->string.length * sizeof(u8);
+            case BowlLibraryValue:
+                return sizeof(struct bowl_value) + value->library.length * sizeof(u8);
+            case BowlMapValue:
+                return sizeof(struct bowl_value) + value->map.capacity * sizeof(BowlValue);
+            case BowlVectorValue:
+                return sizeof(struct bowl_value) + value->vector.length * sizeof(BowlValue);
             default:
-                return sizeof(struct lime_value);
+                return sizeof(struct bowl_value);
         }
     }
 }
 
-void lime_value_debug(LimeValue value, char *message, ...) {
+void bowl_value_debug(BowlValue value, char *message, ...) {
     va_list list;
     printf("[debug] ");
     fflush(stdout);
@@ -418,24 +558,24 @@ void lime_value_debug(LimeValue value, char *message, ...) {
     fflush(stdout);
     va_end(list);
 
-    lime_value_dump(stdout, value);
+    bowl_value_dump(stdout, value);
 
     printf("\n");
     fflush(stdout);
 }
 
-void lime_value_dump(FILE *stream, LimeValue value) {
+void bowl_value_dump(FILE *stream, BowlValue value) {
     if (value == NULL) {
         fprintf(stream, "[ ]");
     } else {
         switch (value->type) {
-            case LimeSymbolValue:
+            case BowlSymbolValue:
                 for (u64 i = 0, end = value->symbol.length; i < end; ++i) {
                     fprintf(stream, "%c", value->symbol.bytes[i]);
                 }
                 break;
 
-            case LimeNumberValue:
+            case BowlNumberValue:
                 if (is_integer(value->number.value)) {
                     fprintf(stream, "%" PRId64, (u64) value->number.value);
                 } else {
@@ -443,7 +583,7 @@ void lime_value_dump(FILE *stream, LimeValue value) {
                 }
                 break;
             
-            case LimeBooleanValue:
+            case BowlBooleanValue:
                 if (value->boolean.value) {
                     fprintf(stream, "true");
                 } else {
@@ -451,19 +591,28 @@ void lime_value_dump(FILE *stream, LimeValue value) {
                 }
                 break;
 
-            case LimeNativeValue:
+            case BowlNativeValue:
                 fprintf(stream, "function#0x%08" PRIX64, (u64) value->function.function);
                 break;
 
-            case LimeLibraryValue:
+            case BowlLibraryValue:
                 fprintf(stream, "library#0x%08" PRIX64, (u64) value->library.handle);
                 break;
 
-            case LimeListValue:
+            case BowlVectorValue:
+                fprintf(stream, "(");
+                for (u64 i = 0; i < value->vector.length; ++i) {
+                    fprintf(stream, " ");
+                    bowl_value_dump(stream, value->vector.elements[i]);
+                }
+                fprintf(stream, " )");
+                break;
+
+            case BowlListValue:
                 fprintf(stream, "[ ");
 
                 do {
-                    lime_value_dump(stream, value->list.head);
+                    bowl_value_dump(stream, value->list.head);
                     value = value->list.tail;
                     if (value != NULL) {
                         fprintf(stream, " ");
@@ -473,7 +622,12 @@ void lime_value_dump(FILE *stream, LimeValue value) {
                 fprintf(stream, " ]");
                 break;
 
-            case LimeStringValue:
+            case BowlExceptionValue:
+                bowl_value_dump(stream, value->exception.message);
+                fprintf(stream, " exception");
+                break;
+
+            case BowlStringValue:
                 fprintf(stream, "\"");
 
                 for (u64 i = 0, end = value->string.length; i < end; ++i) {
@@ -488,12 +642,12 @@ void lime_value_dump(FILE *stream, LimeValue value) {
                 fprintf(stream, "\"");
                 break;
 
-            case LimeMapValue:
-                fprintf(stream, "[ ");
+            case BowlMapValue:
+                fprintf(stream, "{ ");
 
                 bool first = true;
                 for (u64 i = 0, end = value->map.capacity; i < end; ++i) {
-                    LimeValue bucket = value->map.buckets[i];
+                    BowlValue bucket = value->map.buckets[i];
 
                     if (!first && bucket != NULL) {
                         fprintf(stream, " ");
@@ -502,13 +656,11 @@ void lime_value_dump(FILE *stream, LimeValue value) {
                     }
 
                     while (bucket != NULL) {
-                        fprintf(stream, "[ ");
-                        lime_value_dump(stream, bucket->list.head);
+                        bowl_value_dump(stream, bucket->list.head);
                         bucket = bucket->list.tail;
-                        fprintf(stream, " ");
-                        lime_value_dump(stream, bucket->list.head);
+                        fprintf(stream, " : ");
+                        bowl_value_dump(stream, bucket->list.head);
                         bucket = bucket->list.tail;
-                        fprintf(stream, " ]");
 
                         if (bucket != NULL) {
                             fprintf(stream, " ");
@@ -517,16 +669,16 @@ void lime_value_dump(FILE *stream, LimeValue value) {
                 }
 
                 if (first) {
-                    fprintf(stream, "] map-from-list");
+                    fprintf(stream, "}");
                 } else {
-                    fprintf(stream, " ] map-from-list");
+                    fprintf(stream, " }");
                 }
                 break;
         }
     }
 }
 
-static bool lime_value_printf_buffer(char **buffer, u64 *length, u64 *capacity, char *message, ...) {
+static bool bowl_value_printf_buffer(char **buffer, u64 *length, u64 *capacity, char *message, ...) {
     va_list list;
 
     va_start(list, message);
@@ -575,112 +727,145 @@ static bool lime_value_printf_buffer(char **buffer, u64 *length, u64 *capacity, 
     }
 }
 
-static void lime_value_show_buffer(LimeValue value, char **buffer, u64 *length, u64 *capacity) {
+static void bowl_value_show_buffer(BowlValue value, char **buffer, u64 *length, u64 *capacity) {
     if (value == NULL) {
-        lime_value_printf_buffer(buffer, length, capacity, "[ ]");
+        bowl_value_printf_buffer(buffer, length, capacity, "[ ]");
     } else {
         switch (value->type) {
-            case LimeSymbolValue:
+            case BowlSymbolValue:
                 for (u64 i = 0, end = value->symbol.length; i < end; ++i) {
-                    if (!lime_value_printf_buffer(buffer, length, capacity, "%c", value->symbol.bytes[i])) {
+                    if (!bowl_value_printf_buffer(buffer, length, capacity, "%c", value->symbol.bytes[i])) {
                         return;
                     }
                 }
                 break;
 
-            case LimeNumberValue:
+            case BowlNumberValue:
                 if (is_integer(value->number.value)) {
-                    if (!lime_value_printf_buffer(buffer, length, capacity, "%" PRId64, (u64) value->number.value)) {
+                    if (!bowl_value_printf_buffer(buffer, length, capacity, "%" PRId64, (u64) value->number.value)) {
                         return;
                     }
                 } else {
-                    if (!lime_value_printf_buffer(buffer, length, capacity, "%f", value->number.value)) {
+                    if (!bowl_value_printf_buffer(buffer, length, capacity, "%f", value->number.value)) {
                         return;
                     }
+                }
+                break;
+
+            case BowlVectorValue:
+                if (!bowl_value_printf_buffer(buffer, length, capacity, "(")) {
+                    return;
+                }
+
+                for (u64 i = 0; i < value->vector.length; ++i) {
+                    if (!bowl_value_printf_buffer(buffer, length, capacity, " ")) {
+                        return;
+                    }
+
+                    bowl_value_show_buffer(value->vector.elements[i], buffer, length, capacity);
+                    if (*buffer == NULL) {
+                        return;
+                    }
+                }
+
+                if (!bowl_value_printf_buffer(buffer, length, capacity, " )")) {
+                    return;
                 }
                 break;
             
-            case LimeBooleanValue:
+            case BowlBooleanValue:
                 if (value->boolean.value) {
-                    if (!lime_value_printf_buffer(buffer, length, capacity, "true")) {
+                    if (!bowl_value_printf_buffer(buffer, length, capacity, "true")) {
                         return;
                     }
                 } else {
-                    if (!lime_value_printf_buffer(buffer, length, capacity, "false")) {
+                    if (!bowl_value_printf_buffer(buffer, length, capacity, "false")) {
                         return;
                     }
                 }
                 break;
 
-            case LimeNativeValue:
-                if (!lime_value_printf_buffer(buffer, length, capacity, "function#0x%08" PRIX64, (u64) value->function.function)) {
+            case BowlNativeValue:
+                if (!bowl_value_printf_buffer(buffer, length, capacity, "function#0x%08" PRIX64, (u64) value->function.function)) {
                     return;
                 }
                 break;
 
-            case LimeLibraryValue:
-                if (!lime_value_printf_buffer(buffer, length, capacity, "library#0x%08" PRIX64, (u64) value->library.handle)) {
+            case BowlLibraryValue:
+                if (!bowl_value_printf_buffer(buffer, length, capacity, "library#0x%08" PRIX64, (u64) value->library.handle)) {
                     return;
                 }
                 break;
 
-            case LimeListValue:
-                if (!lime_value_printf_buffer(buffer, length, capacity, "[ ")) {
+            case BowlListValue:
+                if (!bowl_value_printf_buffer(buffer, length, capacity, "[ ")) {
                     return;
                 }
 
                 do {
-                    lime_value_show_buffer(value->list.head, buffer, length, capacity);
+                    bowl_value_show_buffer(value->list.head, buffer, length, capacity);
                     if (*buffer == NULL) {
                         return;
                     }
                     value = value->list.tail;
                     if (value != NULL) {
-                        if (!lime_value_printf_buffer(buffer, length, capacity, " ")) {
+                        if (!bowl_value_printf_buffer(buffer, length, capacity, " ")) {
                             return;
                         }
                     }
                 } while (value != NULL);
 
-                if (!lime_value_printf_buffer(buffer, length, capacity, " ]")) {
+                if (!bowl_value_printf_buffer(buffer, length, capacity, " ]")) {
                     return;
                 }
                 break;
 
-            case LimeStringValue:
-                if (!lime_value_printf_buffer(buffer, length, capacity, "\"")) {
+            case BowlExceptionValue:
+                bowl_value_show_buffer(value->exception.message, buffer, length, capacity);
+
+                if (*buffer == NULL) {
+                    return;
+                }
+
+                if (!bowl_value_printf_buffer(buffer, length, capacity, " exception")) {
+                    return;
+                }
+                break;
+
+            case BowlStringValue:
+                if (!bowl_value_printf_buffer(buffer, length, capacity, "\"")) {
                     return;
                 }
 
                 for (u64 i = 0, end = value->string.length; i < end; ++i) {
                     char const* sequence = escape(value->string.bytes[i]);
                     if (sequence != NULL) {
-                        if (!lime_value_printf_buffer(buffer, length, capacity, "%s", sequence)) {
+                        if (!bowl_value_printf_buffer(buffer, length, capacity, "%s", sequence)) {
                             return;
                         }
                     } else {
-                        if (!lime_value_printf_buffer(buffer, length, capacity, "%c", value->string.bytes[i])) {
+                        if (!bowl_value_printf_buffer(buffer, length, capacity, "%c", value->string.bytes[i])) {
                             return;
                         }
                     }
                 }
 
-                if (!lime_value_printf_buffer(buffer, length, capacity, "\"")) {
+                if (!bowl_value_printf_buffer(buffer, length, capacity, "\"")) {
                     return;
                 }
                 break;
 
-            case LimeMapValue:
-                if (!lime_value_printf_buffer(buffer, length, capacity, "[ ")) {
+            case BowlMapValue:
+                if (!bowl_value_printf_buffer(buffer, length, capacity, "[ ")) {
                     return;
                 }
 
                 bool first = true;
                 for (u64 i = 0, end = value->map.capacity; i < end; ++i) {
-                    LimeValue bucket = value->map.buckets[i];
+                    BowlValue bucket = value->map.buckets[i];
 
                     if (!first && bucket != NULL) {
-                        if (!lime_value_printf_buffer(buffer, length, capacity, " ")) {
+                        if (!bowl_value_printf_buffer(buffer, length, capacity, " ")) {
                             return;
                         }
                     } else if (bucket != NULL) {
@@ -688,32 +873,32 @@ static void lime_value_show_buffer(LimeValue value, char **buffer, u64 *length, 
                     }
 
                     while (bucket != NULL) {
-                        if (!lime_value_printf_buffer(buffer, length, capacity, "[ ")) {
+                        if (!bowl_value_printf_buffer(buffer, length, capacity, "[ ")) {
                             return;
                         }
 
-                        lime_value_show_buffer(bucket->list.head, buffer, length, capacity);
+                        bowl_value_show_buffer(bucket->list.head, buffer, length, capacity);
                         if (*buffer == NULL) {
                             return;
                         }
 
                         bucket = bucket->list.tail;
-                        if (!lime_value_printf_buffer(buffer, length, capacity, " ")) {
+                        if (!bowl_value_printf_buffer(buffer, length, capacity, " ")) {
                             return;
                         }
                         
-                        lime_value_show_buffer(bucket->list.head, buffer, length, capacity);
+                        bowl_value_show_buffer(bucket->list.head, buffer, length, capacity);
                         if (*buffer == NULL) {
                             return;
                         }
 
                         bucket = bucket->list.tail;
-                        if (!lime_value_printf_buffer(buffer, length, capacity, " ]")) {
+                        if (!bowl_value_printf_buffer(buffer, length, capacity, " ]")) {
                             return;
                         }
 
                         if (bucket != NULL) {
-                            if (!lime_value_printf_buffer(buffer, length, capacity, " ")) {
+                            if (!bowl_value_printf_buffer(buffer, length, capacity, " ")) {
                                 return;
                             }
                         }
@@ -721,11 +906,11 @@ static void lime_value_show_buffer(LimeValue value, char **buffer, u64 *length, 
                 }
 
                 if (first) {
-                    if (!lime_value_printf_buffer(buffer, length, capacity, "] map-from-list")) {
+                    if (!bowl_value_printf_buffer(buffer, length, capacity, "] map-from-list")) {
                         return;
                     }
                 } else {
-                    if (!lime_value_printf_buffer(buffer, length, capacity, " ] map-from-list")) {
+                    if (!bowl_value_printf_buffer(buffer, length, capacity, " ] map-from-list")) {
                         return;
                     }
                 }
@@ -734,54 +919,58 @@ static void lime_value_show_buffer(LimeValue value, char **buffer, u64 *length, 
     }
 }
 
-void lime_value_show(LimeValue value, char **buffer, u64 *length) {
+void bowl_value_show(BowlValue value, char **buffer, u64 *length) {
     u64 capacity = 4096;
     *length = 0;
     *buffer = malloc(capacity * sizeof(char));
     if (*buffer != NULL) {
-        lime_value_show_buffer(value, buffer, length, &capacity);
+        bowl_value_show_buffer(value, buffer, length, &capacity);
     }
 }
 
-u64 lime_value_length(LimeValue value) {
+u64 bowl_value_length(BowlValue value) {
     if (value == NULL) {
         return 0;
     } else {
         switch (value->type) {
-            case LimeSymbolValue:
+            case BowlSymbolValue:
                 return value->symbol.length;
-            case LimeListValue:
+            case BowlListValue:
                 return value->list.length;
-            case LimeMapValue:
+            case BowlMapValue:
                 return value->map.length;
-            case LimeStringValue: 
+            case BowlStringValue: 
                 return value->string.length;
+            case BowlVectorValue: 
+                return value->vector.length;
             default: 
                 return 0;
         }
     }
 }
 
-char *lime_value_type(LimeValue value) {
+char *bowl_type_name(BowlValueType type) {
     static char *types[] = {
-        [LimeSymbolValue]  = "symbol",
-        [LimeListValue]    = "list",
-        [LimeNativeValue]  = "function",
-        [LimeMapValue]     = "map",
-        [LimeBooleanValue] = "boolean",
-        [LimeNumberValue]  = "number",
-        [LimeStringValue]  = "string",
-        [LimeLibraryValue] = "library"
+        [BowlSymbolValue]  = "symbol",
+        [BowlListValue]    = "list",
+        [BowlNativeValue]  = "function",
+        [BowlMapValue]     = "map",
+        [BowlBooleanValue] = "boolean",
+        [BowlNumberValue]  = "number",
+        [BowlStringValue]  = "string",
+        [BowlLibraryValue] = "library",
+        [BowlVectorValue]  = "vector",
+        [BowlExceptionValue]  = "exception"
     };
-    
-    if (value == NULL) {
-        return types[LimeListValue];
-    } else {
-        return types[value->type];
-    }
+
+    return types[type];
 }
 
-char *lime_string_to_null_terminated(LimeValue value) {
+char *bowl_value_type(BowlValue value) {
+    return bowl_type_name(value == NULL ? BowlListValue : value->type);
+}
+
+char *bowl_string_to_null_terminated(BowlValue value) {
     char *path = malloc(value->string.length + 1);
     
     if (path != NULL) {
@@ -792,14 +981,15 @@ char *lime_string_to_null_terminated(LimeValue value) {
     return path;
 }
 
-LimeValue lime_exception(LimeStack stack, char *message, ...) {
-    static struct lime_value exception = {
-        .type = LimeStringValue,
+BowlResult bowl_format_exception(BowlStack stack, char *message, ...) {
+    BOWL_STATIC_STRING(exception_message, "failed to format exception message in function 'bowl_format_exception'");
+    struct bowl_value exception = {
+        .type = BowlExceptionValue,
         .location = NULL,
         .hash = 0,
-        .string = {
-            .length = 63,
-            .bytes = "failed to format exception message in function 'lime_exception'"
+        .exception = {
+            .cause = NULL,
+            .message = &exception_message.value
         }
     };
     va_list list;
@@ -808,7 +998,7 @@ LimeValue lime_exception(LimeStack stack, char *message, ...) {
     const u64 required = vsnprintf(NULL, 0, message, list);
     va_end(list);
 
-    LimeResult result = gc_allocate(stack, LimeStringValue, (required + 1) * sizeof(u8));
+    BowlResult result = gc_allocate(stack, BowlStringValue, (required + 1) * sizeof(u8));
 
     if (!result.failure) {
         result.value->string.length = required;
@@ -817,29 +1007,153 @@ LimeValue lime_exception(LimeStack stack, char *message, ...) {
         va_end(list);
 
         if (written < 0 || written >= required + 1) {
-            return &exception;
-        } else {
-            return result.value;
+            result.value = &exception;
+            result.failure = false;
         }
-    } else {
-        return result.exception;
-    }
-}
 
-LimeResult lime_symbol(LimeStack stack, u8 *bytes, u64 length) {
-    LimeResult result = gc_allocate(stack, LimeSymbolValue, length * sizeof(u8));
-
-    if (!result.failure) {
-        result.value->symbol.length = length;
-        memcpy(result.value->symbol.bytes, bytes, length * sizeof(u8));
-        lime_value_hash(result.value);    
+        result = bowl_exception(stack, NULL, result.value);
     }
 
     return result;
 }
 
-LimeResult lime_string(LimeStack stack, u8 *bytes, u64 length) {
-    LimeResult result = gc_allocate(stack, LimeStringValue, length * sizeof(u8));
+BowlResult bowl_allocate(BowlStack stack, BowlValueType type, u64 additional) {
+    return gc_allocate(stack, type, additional);
+}
+
+BowlResult bowl_value_clone(BowlStack stack, BowlValue value) {
+    BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, value, NULL, NULL);
+    BowlResult result;
+
+    if (frame.registers[0] == NULL) {
+        result.value = NULL;
+        result.failure = false;
+    } else {
+        const u64 size = bowl_value_byte_size(frame.registers[0]);
+        const u64 additional = size - sizeof(struct bowl_value);
+        result = gc_allocate(&frame, frame.registers[0]->type, additional);
+
+        if (!result.failure) {
+            memcpy(result.value, frame.registers[0], size);
+        }
+    }
+
+    return result;
+}
+
+BowlResult bowl_list_reverse(BowlStack stack, BowlValue list) {
+    BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, list, NULL, NULL);
+    BowlResult result;
+
+    while (frame.registers[0] != NULL) {
+        result = bowl_list(&frame, frame.registers[0]->list.head, frame.registers[1]);
+
+        if (result.failure) {
+            return result;
+        }
+
+        frame.registers[1] = result.value;
+        frame.registers[0] = frame.registers[0]->list.tail;
+    }
+
+    result.value = frame.registers[1];
+    result.failure = false;
+
+    return result;
+}
+
+BowlResult bowl_tokens(BowlStack stack, BowlValue string) {
+    BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, string, NULL, NULL);
+    BowlScanner scanner = scanner_from(&frame.registers[0]);
+    BowlResult result;
+
+    while (scanner_has_next(&scanner)) {
+        switch (scanner_next(&scanner)) {
+            case BowlErrorToken:
+                result = bowl_format_exception(&frame, "%s in line %" PRId64 " at character %" PRId64, scanner.token.error.message, scanner.token.line, scanner.token.column);
+                result.failure = true;
+                return result;
+
+            case BowlBooleanToken:
+                result = bowl_boolean(&frame, scanner.token.boolean.value);
+                break;
+
+            case BowlNumberToken:
+                result = bowl_number(&frame, scanner.token.number.value);
+                break;
+
+            case BowlSymbolToken:
+                result = bowl_allocate(&frame, BowlSymbolValue, scanner.token.symbol.length);
+                
+                if (!result.failure) {
+                    result.value->symbol.length = scanner.token.symbol.length;
+                    memcpy(
+                        result.value->symbol.bytes, 
+                        (*scanner.string)->string.bytes + scanner.token.symbol.start, 
+                        scanner.token.symbol.length * sizeof(u8)
+                    );
+                }
+                break;
+
+            case BowlStringToken:
+                result = bowl_allocate(&frame, BowlStringValue, scanner.token.string.length);
+
+                if (!result.failure) {
+                    const u64 length = scanner.token.string.length;
+                    const u64 start = scanner.token.string.start;
+                    u8 *const bytes = &((*scanner.string)->string.bytes[0]);
+                    u8 *const dst = &result.value->string.bytes[0];
+
+                    register bool escaped = false;
+                    register u64 p = 0;
+                    for (register u64 i = 0; i < length; ++i) {
+                        const char current = bytes[start + i];
+                        if (escaped) {
+                            escaped = false;
+                            dst[p++] = unescape(current);
+                        } else if (current == '\\') {
+                            escaped = true;
+                        } else {
+                            dst[p++] = current;
+                        }
+                    }
+
+                    result.value->string.length = p;
+                }
+
+                break;
+        }
+
+        if (result.failure) {
+            return result;
+        }
+
+        result = bowl_list(&frame, result.value, frame.registers[1]);
+
+        if (result.failure) {
+            return result;
+        }
+
+        frame.registers[1] = result.value;
+    }
+
+    return bowl_list_reverse(&frame, frame.registers[1]);
+}
+
+BowlResult bowl_symbol(BowlStack stack, u8 *bytes, u64 length) {
+    BowlResult result = gc_allocate(stack, BowlSymbolValue, length * sizeof(u8));
+
+    if (!result.failure) {
+        result.value->symbol.length = length;
+        memcpy(result.value->symbol.bytes, bytes, length * sizeof(u8));
+        bowl_value_hash(result.value);    
+    }
+
+    return result;
+}
+
+BowlResult bowl_string(BowlStack stack, u8 *bytes, u64 length) {
+    BowlResult result = gc_allocate(stack, BowlStringValue, length * sizeof(u8));
 
     if (!result.failure) {
         result.value->string.length = length;
@@ -849,9 +1163,9 @@ LimeResult lime_string(LimeStack stack, u8 *bytes, u64 length) {
     return result;
 }
 
-LimeResult lime_function(LimeStack stack, LimeValue library, LimeFunction function) {
-    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
-    LimeResult result = gc_allocate(&frame, LimeNativeValue, 0);
+BowlResult bowl_function(BowlStack stack, BowlValue library, BowlFunction function) {
+    BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
+    BowlResult result = gc_allocate(&frame, BowlNativeValue, 0);
     
     if (!result.failure) {
         result.value->function.library = frame.registers[0];
@@ -861,9 +1175,9 @@ LimeResult lime_function(LimeStack stack, LimeValue library, LimeFunction functi
     return result;
 }
 
-LimeResult lime_list(LimeStack stack, LimeValue head, LimeValue tail) {
-    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, head, tail, NULL);    
-    LimeResult result = gc_allocate(&frame, LimeListValue, 0);
+BowlResult bowl_list(BowlStack stack, BowlValue head, BowlValue tail) {
+    BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, head, tail, NULL);    
+    BowlResult result = gc_allocate(&frame, BowlListValue, 0);
 
     if (!result.failure) {
         result.value->list.head = frame.registers[0];
@@ -879,8 +1193,8 @@ LimeResult lime_list(LimeStack stack, LimeValue head, LimeValue tail) {
     return result;
 }
 
-LimeResult lime_map(LimeStack stack, u64 capacity) {
-    LimeResult result = gc_allocate(stack, LimeMapValue, capacity * sizeof(LimeValue));
+BowlResult bowl_map(BowlStack stack, u64 capacity) {
+    BowlResult result = gc_allocate(stack, BowlMapValue, capacity * sizeof(BowlValue));
 
     if (!result.failure) {
         result.value->map.capacity = capacity;
@@ -894,8 +1208,8 @@ LimeResult lime_map(LimeStack stack, u64 capacity) {
     return result;
 }
 
-LimeResult lime_number(LimeStack stack, double value) {
-    LimeResult result = gc_allocate(stack, LimeNumberValue, 0);
+BowlResult bowl_number(BowlStack stack, double value) {
+    BowlResult result = gc_allocate(stack, BowlNumberValue, 0);
 
     if (!result.failure) {
         result.value->number.value = value;
@@ -904,14 +1218,14 @@ LimeResult lime_number(LimeStack stack, double value) {
     return result;
 }
 
-LimeResult lime_library(LimeStack stack, char *path) {
-    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, NULL, NULL, NULL);
-    LimeResult result;
-    LimeLibraryHandle handle;
+BowlResult bowl_library(BowlStack stack, char *path) {
+    BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, NULL, NULL, NULL);
+    BowlResult result;
+    BowlLibraryHandle handle;
     bool already_loaded;
     const u64 length = strlen(path);
 
-    result = gc_allocate(&frame, LimeLibraryValue, length);
+    result = gc_allocate(&frame, BowlLibraryValue, length);
 
     if (result.failure) {
         return result;
@@ -933,8 +1247,8 @@ LimeResult lime_library(LimeStack stack, char *path) {
     return result;
 }
 
-LimeResult lime_boolean(LimeStack stack, bool value) {
-    LimeResult result = gc_allocate(stack, LimeBooleanValue, 0);
+BowlResult bowl_boolean(BowlStack stack, bool value) {
+    BowlResult result = gc_allocate(stack, BowlBooleanValue, 0);
     
     if (!result.failure) {
         result.value->boolean.value = value;
@@ -943,3 +1257,29 @@ LimeResult lime_boolean(LimeStack stack, bool value) {
     return result;
 }
 
+BowlResult bowl_vector(BowlStack stack, BowlValue value, u64 const length) {
+    BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, value, NULL, NULL);
+    BowlResult result = gc_allocate(&frame, BowlVectorValue, length * sizeof(BowlValue));
+
+    if (!result.failure) {
+        result.value->vector.length = length;
+        
+        for (register u64 i = 0; i < length; ++i) {
+            result.value->vector.elements[i] = frame.registers[0];
+        }
+    }
+
+    return result;
+}
+
+BowlResult bowl_exception(BowlStack stack, BowlValue cause, BowlValue message) {
+    BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, cause, message, NULL);
+    BowlResult result = gc_allocate(&frame, BowlExceptionValue, 0);
+
+    if (!result.failure) {
+        result.value->exception.cause = frame.registers[0];
+        result.value->exception.message = frame.registers[1];
+    }
+
+    return result;
+}

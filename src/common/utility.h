@@ -1,8 +1,7 @@
 #ifndef UTILITY_H
 #define UTILITY_H
 
-#include <lime/common.h>
-#include <math.h>
+#include <bowl/common.h>
 
 #ifndef MAX
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
@@ -19,5 +18,7 @@ char *escape(char c);
 void assert(bool test, char *message, ...);
 
 void println(char *message, ...);
+
+char unescape(char character);
 
 #endif
