@@ -8,6 +8,8 @@
     bowl_library_is_loaded;
     bowl_sentinel_value;
     bowl_register_function;
+    bowl_register;
+    bowl_register_all;
     bowl_settings_verbosity;
     bowl_settings_kernel_path;
     bowl_settings_boot_path;

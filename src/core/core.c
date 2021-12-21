@@ -121,6 +121,25 @@ BowlValue bowl_register_function(BowlStack stack, char *name, BowlValue library,
     return NULL;
 }
 
+BowlValue bowl_register(BowlStack stack, BowlValue library, BowlFunctionEntry entry) {
+    BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
+    return bowl_register_function(&frame, entry.name, frame.registers[0], entry.function);
+}
+
+BowlValue bowl_register_all(BowlStack stack, BowlValue library, BowlFunctionEntry entries[], u64 entries_length) {
+    BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
+    
+    for (u64 i = 0; i < entries_length; ++i) {
+        const BowlValue exception = bowl_register(&frame, frame.registers[0], entries[i]);
+        if (exception != NULL) {
+            return exception;
+        }
+    }
+
+    return NULL;
+}
+
+
 BowlValue bowl_map_get_or_else(BowlValue map, BowlValue key, BowlValue otherwise) {
     const u64 index = bowl_value_hash(key) % map->map.capacity;
     BowlValue bucket = map->map.buckets[index];
