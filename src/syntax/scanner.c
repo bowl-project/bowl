@@ -1,18 +1,18 @@
 #include "scanner.h"
 
-static inline u64 scanner_string_length(LimeScanner *scanner) {
+static inline u64 scanner_string_length(BowlScanner *scanner) {
     return (*scanner->string)->string.length;
 }
 
-static inline bool scanner_is_finished(LimeScanner *scanner) {
+static inline bool scanner_is_finished(BowlScanner *scanner) {
     return scanner->current >= scanner_string_length(scanner);
 }
 
-static inline char scanner_peek(LimeScanner *scanner) {
+static inline char scanner_peek(BowlScanner *scanner) {
     return (*scanner->string)->string.bytes[scanner->current];
 }
 
-static inline void scanner_skip_spaces(LimeScanner *scanner) {
+static inline void scanner_skip_spaces(BowlScanner *scanner) {
     register char current;
     while (!scanner_is_finished(scanner) && isspace(current = scanner_peek(scanner))) {
         if (current == '\n') {
@@ -25,7 +25,7 @@ static inline void scanner_skip_spaces(LimeScanner *scanner) {
     }
 }
 
-static inline u64 scanner_advance_symbol(LimeScanner *scanner) {
+static inline u64 scanner_advance_symbol(BowlScanner *scanner) {
     const u64 start = scanner->current;
     while (!scanner_is_finished(scanner) && !isspace(scanner_peek(scanner))) {
         ++scanner->current;
@@ -34,7 +34,7 @@ static inline u64 scanner_advance_symbol(LimeScanner *scanner) {
     return start;
 }
 
-static inline u64 scanner_advance_string(LimeScanner *scanner) {
+static inline u64 scanner_advance_string(BowlScanner *scanner) {
     const u64 start = ++scanner->current;
 
     register bool escaped = false;
@@ -63,7 +63,7 @@ static inline u64 scanner_advance_string(LimeScanner *scanner) {
     return start;
 }
 
-static void scanner_advance(LimeScanner *scanner) {
+static void scanner_advance(BowlScanner *scanner) {
     scanner_skip_spaces(scanner);
 
     scanner->token.line = scanner->line;
@@ -71,7 +71,7 @@ static void scanner_advance(LimeScanner *scanner) {
     scanner->initialized = true;
 
     if (scanner_is_finished(scanner)) {
-        scanner->token.type = LimeEndOfStreamToken;
+        scanner->token.type = BowlEndOfStreamToken;
     } else {
         const char current = scanner_peek(scanner);
 
@@ -79,10 +79,10 @@ static void scanner_advance(LimeScanner *scanner) {
             char *const start = (char *) ((*scanner->string)->string.bytes + scanner->current);
             char *end;
 
-            scanner->token.type = LimeNumberToken;
+            scanner->token.type = BowlNumberToken;
             scanner->token.number.value = strtod(start, &end);
             if (end == start) {
-                scanner->token.type = LimeErrorToken;
+                scanner->token.type = BowlErrorToken;
                 scanner->token.error.message = "illegal number literal";
             } else {
                 scanner->current += end - start;
@@ -92,10 +92,10 @@ static void scanner_advance(LimeScanner *scanner) {
             const u64 start = scanner_advance_string(scanner);
 
             if (start == scanner_string_length(scanner)) {
-                scanner->token.type = LimeErrorToken;
+                scanner->token.type = BowlErrorToken;
                 scanner->token.error.message = "unexpected end of string literal";
             } else {
-                scanner->token.type = LimeStringToken;
+                scanner->token.type = BowlStringToken;
                 scanner->token.string.start = start;
                 scanner->token.string.length = scanner->current - 1 - start;
             }
@@ -103,13 +103,13 @@ static void scanner_advance(LimeScanner *scanner) {
             const u64 start = scanner_advance_symbol(scanner);
 
             if (SCANNER_STARTS_WITH_LITERAL(scanner, "true", start)) {
-                scanner->token.type = LimeBooleanToken;
+                scanner->token.type = BowlBooleanToken;
                 scanner->token.boolean.value = true;
             } else if (SCANNER_STARTS_WITH_LITERAL(scanner, "false", start)) {
-                scanner->token.type = LimeBooleanToken;
+                scanner->token.type = BowlBooleanToken;
                 scanner->token.boolean.value = false;
             } else {
-                scanner->token.type = LimeSymbolToken;
+                scanner->token.type = BowlSymbolToken;
                 scanner->token.symbol.start = start;
                 scanner->token.symbol.length = scanner->current - start;
             }
@@ -118,30 +118,30 @@ static void scanner_advance(LimeScanner *scanner) {
 
 }
 
-LimeScanner scanner_from(LimeValue *string) {
-    return (LimeScanner) {
+BowlScanner scanner_from(BowlValue *string) {
+    return (BowlScanner) {
         .string = string,
         .current = 0,
         .line = 1,
         .column = 1,
         .initialized = false,
         .token = {
-            .type = LimeErrorToken,
+            .type = BowlErrorToken,
             .line = 1,
             .column = 1
         }
     };
 }
 
-bool scanner_has_next(LimeScanner *scanner) {
+bool scanner_has_next(BowlScanner *scanner) {
     if (!scanner->initialized) {
         scanner_advance(scanner);
     }
 
-    return scanner->token.type != LimeEndOfStreamToken;
+    return scanner->token.type != BowlEndOfStreamToken;
 }
 
-LimeTokenType scanner_next(LimeScanner *scanner) {
+BowlTokenType scanner_next(BowlScanner *scanner) {
     if (!scanner->initialized) {
         scanner_advance(scanner);
     }

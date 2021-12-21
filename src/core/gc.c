@@ -7,22 +7,22 @@ static u64 gc_heap_ptr = 0;
 static u64 gc_heap_size = 0;
 
 // a list of all libraries which are currently loaded
-static LimeValue *gc_libraries = NULL;
+static BowlValue *gc_libraries = NULL;
 static u64 gc_libraries_capacity = 0;
 static u64 gc_libraries_size = 0;
 
-static inline bool gc_is_managed(LimeValue value) {
+static inline bool gc_is_managed(BowlValue value) {
     // only objects that resize inside the 'gc_heap_src' are managed by the garbage collector
     return (u64) value >= (u64) gc_heap_src && (u64) value < (u64) (gc_heap_src + gc_heap_size);
 }
 
-static LimeValue gc_add_library_to_list(LimeValue library) {
+static BowlValue gc_add_library_to_list(BowlValue library) {
     if (gc_libraries_size >= gc_libraries_capacity) {
         const u64 capacity = MAX(gc_libraries_capacity * 2, 16);
         
-        LimeValue *const new_libraries = realloc(gc_libraries, sizeof(LimeValue) * capacity);
+        BowlValue *const new_libraries = realloc(gc_libraries, sizeof(BowlValue) * capacity);
         if (new_libraries == NULL) {
-            return lime_exception_out_of_heap;
+            return bowl_exception_out_of_heap;
         } else {
             gc_libraries = new_libraries;
             gc_libraries_capacity = capacity;
@@ -35,18 +35,18 @@ static LimeValue gc_add_library_to_list(LimeValue library) {
 }
 
 static void gc_remove_library_from_list(u64 index) {
-    memmove(&gc_libraries[index], &gc_libraries[index + 1], (gc_libraries_size - (index + 1)) * sizeof(LimeValue));
+    memmove(&gc_libraries[index], &gc_libraries[index + 1], (gc_libraries_size - (index + 1)) * sizeof(BowlValue));
     --gc_libraries_size;
 }
 
-static LimeValue gc_relocate(LimeValue value) {
+static BowlValue gc_relocate(BowlValue value) {
     if (value == NULL) {
         return NULL;
     } else if (!gc_is_managed(value)) {
         return value;
     } else if (value->location == NULL) {
-        const LimeValue copy = (LimeValue) (gc_heap_dst + gc_heap_ptr);
-        const u64 bytes = lime_value_byte_size(value);
+        const BowlValue copy = (BowlValue) (gc_heap_dst + gc_heap_ptr);
+        const u64 bytes = bowl_value_byte_size(value);
         gc_heap_ptr += bytes;
         memcpy(copy, value, bytes);
         value->location = copy;
@@ -55,7 +55,7 @@ static LimeValue gc_relocate(LimeValue value) {
     return value->location;
 }
 
-LimeValue lime_collect_garbage(LimeStack stack) {
+BowlValue bowl_collect_garbage(BowlStack stack) {
     // swap heaps
     u8 *const swap = gc_heap_dst;
     gc_heap_dst = gc_heap_src;
@@ -63,7 +63,7 @@ LimeValue lime_collect_garbage(LimeStack stack) {
     gc_heap_ptr = 0;
 
     // mark the root objects
-    register LimeStack current = stack;
+    register BowlStack current = stack;
     while (current != NULL) {
         for (u64 i = 0; i < sizeof(current->registers) / sizeof(current->registers[0]); ++i) {
             current->registers[i] = gc_relocate(current->registers[i]);
@@ -87,29 +87,29 @@ LimeValue lime_collect_garbage(LimeStack stack) {
     // relocate all objects which are reachable from the root objects
     register u64 scan = 0;
     while (scan < gc_heap_ptr) {
-        const LimeValue value = (LimeValue) (gc_heap_dst + scan);
-        const u64 bytes = lime_value_byte_size(value);
+        const BowlValue value = (BowlValue) (gc_heap_dst + scan);
+        const u64 bytes = bowl_value_byte_size(value);
         scan += bytes;
 
         switch (value->type) {
-            case LimeNativeValue:
+            case BowlNativeValue:
                 value->function.library = gc_relocate(value->function.library);
                 break;
-            case LimeListValue:
+            case BowlListValue:
                 value->list.head = gc_relocate(value->list.head);
                 value->list.tail = gc_relocate(value->list.tail);
                 break;
-            case LimeMapValue:
+            case BowlMapValue:
                 for (u64 i = 0, end = value->map.capacity; i < end; ++i) {
                     value->map.buckets[i] = gc_relocate(value->map.buckets[i]);
                 }
                 break;
-            case LimeVectorValue:
+            case BowlVectorValue:
                 for (u64 i = 0, end = value->vector.length; i < end; ++i) {
                     value->vector.elements[i] = gc_relocate(value->vector.elements[i]);
                 }
                 break;
-            case LimeExceptionValue:
+            case BowlExceptionValue:
                 value->exception.cause = gc_relocate(value->exception.cause);
                 value->exception.message = gc_relocate(value->exception.message);
                 break;
@@ -121,7 +121,7 @@ LimeValue lime_collect_garbage(LimeStack stack) {
 
     // update all weak references
     for (u64 i = 0; i < gc_libraries_size; ++i) {
-        const LimeValue library = gc_libraries[i];
+        const BowlValue library = gc_libraries[i];
 
         if (library->location != NULL) {
             gc_libraries[i] = library->location;
@@ -129,13 +129,13 @@ LimeValue lime_collect_garbage(LimeStack stack) {
     }
 
     // clean up all libraries which are no longer needed
-    LimeLibraryResult result = {
+    BowlLibraryResult result = {
         .failure = false,
         .exception = NULL
     };
 
     for (u64 i = 0; i < gc_libraries_size; ++i) {
-        const LimeValue library = gc_libraries[i];
+        const BowlValue library = gc_libraries[i];
 
         if (!gc_is_managed(library)) {
             continue;
@@ -168,22 +168,22 @@ static bool gc_heap_reallocate(u64 new_heap_size) {
     }
 }
 
-static LimeValue gc_heap_resize(LimeStack stack, const u64 new_heap_size) {
+static BowlValue gc_heap_resize(BowlStack stack, const u64 new_heap_size) {
     // as we cannot simply resize both heaps at once we have to resize the 'gc_heap_src' 
     // which is unused at this point
     if (!gc_heap_reallocate(new_heap_size)) {
-        return lime_exception_out_of_heap;
+        return bowl_exception_out_of_heap;
     }
     
     // copy all objects from 'gc_heap_dst' to the new 'gc_heap_src'
-    const LimeValue exception = lime_collect_garbage(stack);
+    const BowlValue exception = bowl_collect_garbage(stack);
     if (exception != NULL) {
         return exception;
     }
     
     // since the two heaps were swapped by the previous call we can resize 'gc_heap_src' again
     if (!gc_heap_reallocate(new_heap_size)) {
-        return lime_exception_out_of_heap;
+        return bowl_exception_out_of_heap;
     }
 
     // it is important to set the 'gc_heap_size' not until both heaps were resized, because it
@@ -193,17 +193,17 @@ static LimeValue gc_heap_resize(LimeStack stack, const u64 new_heap_size) {
     return NULL;
 }
 
-LimeResult gc_allocate(LimeStack stack, LimeValueType type, u64 additional) {
-    LimeResult result = {
+BowlResult gc_allocate(BowlStack stack, BowlValueType type, u64 additional) {
+    BowlResult result = {
         .failure = false,
         .value = NULL
     };
 
-    const u64 bytes = sizeof(struct lime_value) + additional;
+    const u64 bytes = sizeof(struct bowl_value) + additional;
 
     if (gc_heap_ptr + bytes > gc_heap_size) {
         // try to collect garbage
-        result.exception = lime_collect_garbage(stack);
+        result.exception = bowl_collect_garbage(stack);
         if (result.exception != NULL) {
             result.failure = true;
             return result;
@@ -217,7 +217,7 @@ LimeResult gc_allocate(LimeStack stack, LimeValueType type, u64 additional) {
             
             // try to resize the heap to the "best" heap size
             result.exception = gc_heap_resize(stack, new_heap_size);
-            if (result.exception == lime_exception_out_of_heap && minimum_heap_size < new_heap_size) {
+            if (result.exception == bowl_exception_out_of_heap && minimum_heap_size < new_heap_size) {
                 // try to resize the heap to the minimum if it is truly smaller than the "best" heap size
                 result.exception = gc_heap_resize(stack, minimum_heap_size);
                 if (result.exception != NULL) {
@@ -231,7 +231,7 @@ LimeResult gc_allocate(LimeStack stack, LimeValueType type, u64 additional) {
         }
     }
 
-    result.value = (LimeValue) (gc_heap_dst + gc_heap_ptr);
+    result.value = (BowlValue) (gc_heap_dst + gc_heap_ptr);
     gc_heap_ptr += bytes;
 
     result.value->type = type;
@@ -241,14 +241,14 @@ LimeResult gc_allocate(LimeStack stack, LimeValueType type, u64 additional) {
     return result;
 }
 
-LimeResult gc_add_library(LimeStack stack, LimeValue library) {
-    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
-    LimeResult result = {
+BowlResult gc_add_library(BowlStack stack, BowlValue library) {
+    BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
+    BowlResult result = {
         .failure = false,
         .value = NULL
     };
 
-    LimeLibraryResult library_result = library_open(&frame, frame.registers[0]);
+    BowlLibraryResult library_result = library_open(&frame, frame.registers[0]);
 
     if (library_result.failure) {
         result.failure = true;

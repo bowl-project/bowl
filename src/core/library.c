@@ -1,20 +1,20 @@
 #include "library.h"
 
-static LimeLibraryMap *library_cache = NULL;
+static BowlLibraryMap *library_cache = NULL;
 
-static LimeLibraryResult library_initialize_cache(void) {
-    LimeLibraryResult result = {
+static BowlLibraryResult library_initialize_cache(void) {
+    BowlLibraryResult result = {
         .failure = false,
         .handle = NULL
     };
 
     if (library_cache == NULL) {
         const u64 capacity = 16;
-        library_cache = malloc(sizeof(LimeLibraryMap) + capacity * sizeof(LimeLibraryMapBucket));
+        library_cache = malloc(sizeof(BowlLibraryMap) + capacity * sizeof(BowlLibraryMapBucket));
 
         if (library_cache == NULL) {
             result.failure = true;
-            result.exception = lime_exception_out_of_heap;
+            result.exception = bowl_exception_out_of_heap;
         } else {
             library_cache->capacity = capacity;
             library_cache->length = 0;
@@ -29,9 +29,9 @@ static LimeLibraryResult library_initialize_cache(void) {
     return result;
 }
 
-static inline void library_remove_entry(LimeLibraryMapBucket *bucket, u64 index) {
+static inline void library_remove_entry(BowlLibraryMapBucket *bucket, u64 index) {
     free(bucket->entries[index].key.bytes);
-    memmove(&bucket->entries[index], &bucket->entries[index + 1], (bucket->length - (index + 1)) * sizeof(LimeLibraryMapEntry));
+    memmove(&bucket->entries[index], &bucket->entries[index + 1], (bucket->length - (index + 1)) * sizeof(BowlLibraryMapEntry));
     --bucket->length;
 }
 
@@ -49,14 +49,14 @@ static inline u64 library_equals(u8 *a, u64 a_length, u8 *b, u64 b_length) {
     return a_length == b_length && memcmp(a, b, a_length) == 0;
 }
 
-static LimeValue library_enlarge_bucket(LimeLibraryMapBucket *bucket) {
+static BowlValue library_enlarge_bucket(BowlLibraryMapBucket *bucket) {
     // resize the bucket if it is not large enough
     if (bucket->length >= bucket->capacity) {
         const u64 new_capacity = MAX(bucket->capacity * 2, bucket->length + 1);
-        LimeLibraryMapEntry *const new_entries = realloc(bucket->entries, sizeof(LimeLibraryMapEntry) * new_capacity);
+        BowlLibraryMapEntry *const new_entries = realloc(bucket->entries, sizeof(BowlLibraryMapEntry) * new_capacity);
         
         if (new_entries == NULL) {
-            return lime_exception_out_of_heap;
+            return bowl_exception_out_of_heap;
         }
 
         bucket->entries = new_entries;
@@ -66,33 +66,33 @@ static LimeValue library_enlarge_bucket(LimeLibraryMapBucket *bucket) {
     return NULL;
 }
 
-static LimeValue library_enlarge_cache(void) {
+static BowlValue library_enlarge_cache(void) {
     const u64 new_capacity = MAX(library_cache->capacity * 2, 16);
-    LimeLibraryMap *const new_cache = realloc(library_cache, sizeof(LimeLibraryMap) + new_capacity * sizeof(LimeLibraryMapBucket));
+    BowlLibraryMap *const new_cache = realloc(library_cache, sizeof(BowlLibraryMap) + new_capacity * sizeof(BowlLibraryMapBucket));
 
     if (new_cache == NULL) {
-        return lime_exception_out_of_heap;
+        return bowl_exception_out_of_heap;
     }
 
     library_cache = new_cache;
 
     for (u64 i = 0; i < library_cache->capacity; ++i) {
-        LimeLibraryMapBucket *bucket = &library_cache->buckets[i];
+        BowlLibraryMapBucket *bucket = &library_cache->buckets[i];
 
         for (u64 j = 0; j < bucket->length; ++j) {
-            LimeLibraryMapEntry *entry = &bucket->entries[j];
+            BowlLibraryMapEntry *entry = &bucket->entries[j];
             const u64 hash = library_hash(entry->key.bytes, entry->key.length);
             const u64 new_index = hash % new_capacity;
             
             if (new_index != i) {
-                LimeLibraryMapBucket *const destination = &library_cache->buckets[new_index];
-                const LimeValue exception = library_enlarge_bucket(destination);
+                BowlLibraryMapBucket *const destination = &library_cache->buckets[new_index];
+                const BowlValue exception = library_enlarge_bucket(destination);
 
                 if (exception != NULL) {
                     return exception;
                 }
 
-                memcpy(&destination->entries[destination->length], entry, sizeof(LimeLibraryMapEntry));
+                memcpy(&destination->entries[destination->length], entry, sizeof(BowlLibraryMapEntry));
                 ++destination->length;
 
                 // prevent the path from deletion
@@ -107,13 +107,13 @@ static LimeValue library_enlarge_cache(void) {
     return NULL;
 }
 
-static inline LimeLibraryMapBucket *library_get_bucket(LimeValue library) {
+static inline BowlLibraryMapBucket *library_get_bucket(BowlValue library) {
     return &library_cache->buckets[library_hash(library->library.bytes, library->library.length) % library_cache->capacity];
 }
 
-static u64 library_get_entry_index(LimeLibraryMapBucket *bucket, LimeValue library) {
+static u64 library_get_entry_index(BowlLibraryMapBucket *bucket, BowlValue library) {
     for (u64 i = 0; i < bucket->length; ++i) {
-        LimeLibraryMapEntry *entry = &bucket->entries[i];
+        BowlLibraryMapEntry *entry = &bucket->entries[i];
 
         if (library_equals(library->library.bytes, library->library.length, entry->key.bytes, entry->key.length)) {
             return i;
@@ -123,7 +123,7 @@ static u64 library_get_entry_index(LimeLibraryMapBucket *bucket, LimeValue libra
     return (u64) -1;
 }
 
-static LimeLibraryMapEntry *library_get_entry(LimeLibraryMapBucket *bucket, LimeValue library)  {
+static BowlLibraryMapEntry *library_get_entry(BowlLibraryMapBucket *bucket, BowlValue library)  {
     const u64 index = library_get_entry_index(bucket, library);
     if (index == (u64) -1) {
         return NULL;
@@ -138,10 +138,10 @@ static void library_dump(void) {
     
     bool first = true;
     for (u64 i = 0; i < library_cache->capacity; ++i) {
-        LimeLibraryMapBucket *bucket = &library_cache->buckets[i];
+        BowlLibraryMapBucket *bucket = &library_cache->buckets[i];
 
         for (u64 j = 0; j < bucket->length; ++j) {
-            LimeLibraryMapEntry *entry = &bucket->entries[j];
+            BowlLibraryMapEntry *entry = &bucket->entries[j];
 
             if (first) {
                 first = false;
@@ -162,23 +162,23 @@ static void library_dump(void) {
 
 }
 
-LimeLibraryResult library_open(LimeStack stack, LimeValue library) {
+BowlLibraryResult library_open(BowlStack stack, BowlValue library) {
     static const double load_factor = 0.75;
 
-    LimeLibraryResult result = library_initialize_cache();
+    BowlLibraryResult result = library_initialize_cache();
 
     if (result.failure) {
         return result;
     }
 
-    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
-    LimeValue exception;
+    BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
+    BowlValue exception;
 
     frame.registers[0]->library.handle = NULL;
 
     const u64 length = frame.registers[0]->library.length;
-    LimeLibraryMapBucket *bucket = library_get_bucket(frame.registers[0]);
-    LimeLibraryMapEntry *entry = library_get_entry(bucket, frame.registers[0]);
+    BowlLibraryMapBucket *bucket = library_get_bucket(frame.registers[0]);
+    BowlLibraryMapEntry *entry = library_get_entry(bucket, frame.registers[0]);
 
     if (entry != NULL) {
         result.handle = entry->value.handle;
@@ -205,7 +205,7 @@ LimeLibraryResult library_open(LimeStack stack, LimeValue library) {
 
     if (path == NULL) {
         result.failure = true;
-        result.exception = lime_exception_out_of_heap;
+        result.exception = bowl_exception_out_of_heap;
         return result;
     }
 
@@ -215,9 +215,9 @@ LimeLibraryResult library_open(LimeStack stack, LimeValue library) {
     // open the library handle
     #if defined(OS_UNIX)
         // check if the library is already loaded
-        LimeLibraryHandle handle = dlopen((char *) path, RTLD_LAZY);
+        BowlLibraryHandle handle = dlopen((char *) path, RTLD_LAZY);
     #elif defined(OS_WINDOWS)
-        LimeLibraryHandle handle = LoadLibrary((char *) path);
+        BowlLibraryHandle handle = LoadLibrary((char *) path);
     #else
         // setting the handle to 'NULL' here triggers the error in the next line, which is 
         // desired because native libraries are not supported on this platform.
@@ -225,7 +225,7 @@ LimeLibraryResult library_open(LimeStack stack, LimeValue library) {
     #endif
 
     if (handle == NULL) {
-        LimeResult temporary = lime_format_exception(&frame, "failed to load library '%s'", (char *) path);
+        BowlResult temporary = bowl_format_exception(&frame, "failed to load library '%s'", (char *) path);
         result.exception = temporary.value;
         result.failure = true;
         free(path);
@@ -243,15 +243,15 @@ LimeLibraryResult library_open(LimeStack stack, LimeValue library) {
     frame.registers[0]->library.handle = handle;
 
     #if defined(OS_UNIX)
-        LimeModuleFunction initialize = (LimeModuleFunction) dlsym(handle, "lime_module_initialize");
+        BowlModuleFunction initialize = (BowlModuleFunction) dlsym(handle, "bowl_module_initialize");
     #elif defined(OS_WINDOWS)
-        LimeModuleFunction initialize = (LimeModuleFunction) GetProcAddress(handle, "lime_module_initialize");
+        BowlModuleFunction initialize = (BowlModuleFunction) GetProcAddress(handle, "bowl_module_initialize");
     #else
-        LimeModuleFunction initialize = NULL;
+        BowlModuleFunction initialize = NULL;
     #endif
 
     if (initialize == NULL) {
-        LimeResult temporary = lime_format_exception(&frame, "failed to load library '%s'", path);
+        BowlResult temporary = bowl_format_exception(&frame, "failed to load library '%s'", path);
         result.exception = temporary.exception;
         result.failure = true;
         return result;
@@ -270,27 +270,27 @@ LimeLibraryResult library_open(LimeStack stack, LimeValue library) {
     return result;
 }
 
-LimeLibraryResult library_close(LimeStack stack, LimeValue library) {
-    LimeStackFrame frame = LIME_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
-    LimeLibraryResult result = library_initialize_cache();
+BowlLibraryResult library_close(BowlStack stack, BowlValue library) {
+    BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
+    BowlLibraryResult result = library_initialize_cache();
 
     if (result.failure) {
         return result;
     }
 
     const u64 length = frame.registers[0]->library.length;
-    LimeLibraryMapBucket *bucket = library_get_bucket(frame.registers[0]);
+    BowlLibraryMapBucket *bucket = library_get_bucket(frame.registers[0]);
     const u64 index = library_get_entry_index(bucket, frame.registers[0]);
 
     if (index == (u64) -1) {
-        result.exception = lime_exception_finalization_failure;
+        result.exception = bowl_exception_finalization_failure;
         result.failure = true;
         return result;
     } else {
-        LimeLibraryMapEntry *entry = &bucket->entries[index];
+        BowlLibraryMapEntry *entry = &bucket->entries[index];
 
         if (--entry->value.references <= 0) {
-            LimeLibraryHandle handle = entry->value.handle;
+            BowlLibraryHandle handle = entry->value.handle;
             
             // overwrite the handle of the library to prevent it from future use
             frame.registers[0]->library.handle = NULL;
@@ -299,18 +299,18 @@ LimeLibraryResult library_close(LimeStack stack, LimeValue library) {
             library_remove_entry(bucket, index);
 
             #if defined(OS_UNIX)
-                LimeModuleFunction finalize = (LimeModuleFunction) dlsym(handle, "lime_module_finalize");
+                BowlModuleFunction finalize = (BowlModuleFunction) dlsym(handle, "bowl_module_finalize");
             #elif defined(OS_WINDOWS)
-                LimeModuleFunction finalize = (LimeModuleFunction) GetProcAddress(handle, "lime_module_finalize");
+                BowlModuleFunction finalize = (BowlModuleFunction) GetProcAddress(handle, "bowl_module_finalize");
             #else
-                LimeModuleFunction finalize = NULL;
+                BowlModuleFunction finalize = NULL;
             #endif
 
             if (finalize == NULL) {
-                result.exception = lime_exception_finalization_failure;
+                result.exception = bowl_exception_finalization_failure;
                 result.failure = true;
             } else {
-                const LimeValue exception = finalize(&frame, frame.registers[0]);
+                const BowlValue exception = finalize(&frame, frame.registers[0]);
 
                 if (exception != NULL) {
                     result.exception = exception;
@@ -321,12 +321,12 @@ LimeLibraryResult library_close(LimeStack stack, LimeValue library) {
             // close the native library handle
             #if defined(OS_UNIX)
                 if (dlclose(handle) != 0 && !result.failure) {
-                    result.exception = lime_exception_finalization_failure;
+                    result.exception = bowl_exception_finalization_failure;
                     result.failure = true;
                 }
             #elif defined(OS_WINDOWS)
                 if (FreeLibrary(handle) == 0 && !result.failure) {
-                    result.exception = lime_exception_finalization_failure;
+                    result.exception = bowl_exception_finalization_failure;
                     result.failure = true;
                 }
             #endif

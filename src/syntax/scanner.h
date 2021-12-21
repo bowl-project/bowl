@@ -1,19 +1,19 @@
 #ifndef SCANNER_H
 #define SCANNER_H
 
-#include <lime/api.h>
+#include <bowl/api.h>
 
 typedef enum {
-    LimeNumberToken,
-    LimeStringToken,
-    LimeBooleanToken,
-    LimeSymbolToken,
-    LimeEndOfStreamToken,
-    LimeErrorToken
-} LimeTokenType;
+    BowlNumberToken,
+    BowlStringToken,
+    BowlBooleanToken,
+    BowlSymbolToken,
+    BowlEndOfStreamToken,
+    BowlErrorToken
+} BowlTokenType;
 
 typedef struct {
-    LimeTokenType type;
+    BowlTokenType type;
     u64 line;
     u64 column;
     union {
@@ -39,23 +39,23 @@ typedef struct {
             char *message;
         } error;
     };
-} LimeToken;
+} BowlToken;
 
 typedef struct {
-    LimeValue *string;
+    BowlValue *string;
     u64 current;
     u64 line;
     u64 column;
     bool initialized;
-    LimeToken token;
-} LimeScanner;
+    BowlToken token;
+} BowlScanner;
 
 #define SCANNER_STARTS_WITH_LITERAL(scanner, literal, offset) ((scanner)->current - (offset) == sizeof(literal) - 1 && memcmp((*(scanner)->string)->string.bytes + (offset), (literal), sizeof(literal) - 1) == 0)
 
-LimeScanner scanner_from(LimeValue *string);
+BowlScanner scanner_from(BowlValue *string);
 
-bool scanner_has_next(LimeScanner *scanner);
+bool scanner_has_next(BowlScanner *scanner);
 
-LimeTokenType scanner_next(LimeScanner *scanner);
+BowlTokenType scanner_next(BowlScanner *scanner);
 
 #endif

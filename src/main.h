@@ -1,11 +1,11 @@
 #ifndef MAIN_H
 #define MAIN_H
 
-#include <lime/common.h>
+#include <bowl/common.h>
 #include "common/cli.h"
 #include "core/module.h"
 
-#define LIME_VM_VERSION "0.0.1-alpha"
+#define BOWL_VM_VERSION "0.0.1-alpha"
 
 int main(int argc, char *argv[]);
 

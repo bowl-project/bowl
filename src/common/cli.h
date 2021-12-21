@@ -2,7 +2,7 @@
 #define CLI_H
 
 #include "utility.h"
-#include <lime/common.h>
+#include <bowl/common.h>
 
 typedef bool (*CommandLineFunction)(char *arguments[]);
 

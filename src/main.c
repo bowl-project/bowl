@@ -1,8 +1,8 @@
 #include "main.h"
 
-const char *lime_settings_boot_path = "boot.lime";
+const char *bowl_settings_boot_path = "boot.bowl";
 
-const char *lime_settings_kernel_path =
+const char *bowl_settings_kernel_path =
     #if defined(OS_WINDOWS)
         "kernel.dll"
     #else
@@ -10,7 +10,7 @@ const char *lime_settings_kernel_path =
     #endif
 ;
 
-u64 lime_settings_verbosity = 0;
+u64 bowl_settings_verbosity = 0;
 
 static CommandLineFlag commands[] = {
     {
@@ -71,7 +71,7 @@ static CommandLineFlag commands[] = {
         .synonyms = { "b" },
         .description = 
             "Specifies the path to the boot file. By default this\n"
-            "flag is set to 'boot.lime'.\n",
+            "flag is set to 'boot.bowl'.\n",
         .number_of_arguments = 1,
         .function = command_boot
     }
@@ -98,7 +98,7 @@ bool command_execute(char *arguments[]) {
     ;
 
     static const char *const bootloader = 
-        "\"../lime-io/io.so\" library drop\n" // load the io-library
+        "\"../bowl-io/io.so\" library drop\n" // load the io-library
         // prepend code that deletes the entire rest of the callstack 
         "lift swap \"lift swap drop list:empty swap continue\" tokens swap list:concat\n"
         // prepare the sandbox call
@@ -111,7 +111,7 @@ bool command_execute(char *arguments[]) {
     char *const user_code = arguments[0];
     
     char buffer[4096 + sizeof(bootloader) - 1 + sizeof(handle_sandbox_return)];
-    sprintf(buffer, bootloader, handle_sandbox_return, lime_settings_boot_path);
+    sprintf(buffer, bootloader, handle_sandbox_return, bowl_settings_boot_path);
 
     execute(buffer);
 
@@ -119,17 +119,17 @@ bool command_execute(char *arguments[]) {
 }
 
 bool command_version(char *arguments[]) {
-    printf("[version] lime virtual machine version v%s built on %s (%s %s)\n", LIME_VM_VERSION, __DATE__, OS_NAME, OS_ARCHITECTURE);
+    printf("[version] bowl virtual machine version v%s built on %s (%s %s)\n", BOWL_VM_VERSION, __DATE__, OS_NAME, OS_ARCHITECTURE);
     return true;
 }
 
 bool command_kernel(char *arguments[]) {
-    lime_settings_kernel_path = arguments[0];
+    bowl_settings_kernel_path = arguments[0];
     return true;
 }
 
 bool command_boot(char *arguments[]) {
-    lime_settings_boot_path = arguments[0];
+    bowl_settings_boot_path = arguments[0];
     return true;
 }
 
@@ -139,7 +139,7 @@ bool command_verbose(char *arguments[]) {
         cli_error("illegal verbosity level '%s'", arguments[0]);
         return false;
     } else {
-        lime_settings_verbosity = verbosity;
+        bowl_settings_verbosity = verbosity;
         return true;
     }
 }
