@@ -115,8 +115,11 @@ BowlValue bowl_module_initialize(BowlStack stack, BowlValue library) {
     if (run == bowl_sentinel_value) {
         return bowl_format_exception(&frame, "failed to initialize module 'kernel' in function '%s'", __FUNCTION__).value;
     } else {
+        // fetch the function from the entry
+        const BowlFunction fn = run->list.head->function.function;
+
         // bootstrap the first instance 
-        BowlValue exception = run->function.function(&frame);
+        BowlValue exception = fn(&frame);
 
         if (exception != NULL) {
             return exception;

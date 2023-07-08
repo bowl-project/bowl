@@ -1,35 +1,48 @@
 #include "scanner.h"
 
-static inline u64 scanner_string_length(BowlScanner *scanner) {
-    return (*scanner->string)->string.length;
-}
+// TODO: 
+// - finish unicode support
+// - handle erroneous utf-8 encodings by returning different error tokens.
 
 static inline bool scanner_is_finished(BowlScanner *scanner) {
-    return scanner->current >= scanner_string_length(scanner);
+    return scanner->current >= (*scanner->string)->string.size;
 }
 
-static inline char scanner_peek(BowlScanner *scanner) {
-    return (*scanner->string)->string.bytes[scanner->current];
+static inline u64 scanner_read_next_codepoint(BowlScanner *scanner) {
+    while (!scanner_is_finished(scanner)) {
+        switch (unicode_utf8_decode(&scanner->state, &scanner->codepoint, (*scanner->string)->string.bytes[scanner->current++])) {
+            case UNICODE_UTF8_ACCEPT:
+                return scanner->codepoint;
+            case UNICODE_UTF8_REJECT:
+                return -1;
+        }
+    }
+    
+    // incomplete codepoint
+    return -2;
 }
 
 static inline void scanner_skip_spaces(BowlScanner *scanner) {
-    register char current;
-    while (!scanner_is_finished(scanner) && isspace(current = scanner_peek(scanner))) {
-        if (current == '\n') {
+    while (!scanner_is_finished(scanner) && unicode_is_space(scanner->codepoint)) {
+        if (scanner->codepoint == '\n') {
             scanner->column = 1;
             ++scanner->line;
         } else {
             ++scanner->column;
         }
-        ++scanner->current;
+
+// TODO error handling ...
+        scanner_read_next_codepoint(scanner);
     }
 }
 
 static inline u64 scanner_advance_symbol(BowlScanner *scanner) {
     const u64 start = scanner->current;
-    while (!scanner_is_finished(scanner) && !isspace(scanner_peek(scanner))) {
-        ++scanner->current;
+    while (!scanner_is_finished(scanner) && !unicode_is_space(scanner->codepoint)) {
         ++scanner->column;
+
+        // TODO : error handling
+        scanner_read_next_codepoint(scanner);
     }
     return start;
 }
@@ -54,7 +67,8 @@ static inline u64 scanner_advance_string(BowlScanner *scanner) {
     }
     
     if (scanner_is_finished(scanner)) {
-        return scanner_string_length(scanner);
+        return scanner_string_size
+    (scanner);
     } else {
         ++scanner->current;
         ++scanner->column;
@@ -91,13 +105,13 @@ static void scanner_advance(BowlScanner *scanner) {
         } else if (current == '"') {
             const u64 start = scanner_advance_string(scanner);
 
-            if (start == scanner_string_length(scanner)) {
+            if (start == scanner_string_size(scanner)) {
                 scanner->token.type = BowlErrorToken;
                 scanner->token.error.message = "unexpected end of string literal";
             } else {
                 scanner->token.type = BowlStringToken;
                 scanner->token.string.start = start;
-                scanner->token.string.length = scanner->current - 1 - start;
+                scanner->token.string.size = scanner->current - 1 - start;
             }
         } else {
             const u64 start = scanner_advance_symbol(scanner);
@@ -119,8 +133,10 @@ static void scanner_advance(BowlScanner *scanner) {
 }
 
 BowlScanner scanner_from(BowlValue *string) {
-    return (BowlScanner) {
+    BowlScanner scanner = {
         .string = string,
+        .state = UNICODE_UTF8_ACCEPT,
+        .codepoint = 0,
         .current = 0,
         .line = 1,
         .column = 1,
@@ -131,6 +147,13 @@ BowlScanner scanner_from(BowlValue *string) {
             .column = 1
         }
     };
+
+    // read the first codepoint, if possible
+    if ((*string)->string.size > 0) {
+        scanner_read_next_codepoint(&scanner);
+    }
+
+    return scanner;
 }
 
 bool scanner_has_next(BowlScanner *scanner) {

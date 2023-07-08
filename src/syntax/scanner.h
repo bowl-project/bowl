@@ -2,6 +2,7 @@
 #define SCANNER_H
 
 #include <bowl/api.h>
+#include <bowl/unicode.h>
 
 typedef enum {
     BowlNumberToken,
@@ -42,7 +43,13 @@ typedef struct {
 } BowlToken;
 
 typedef struct {
+    /** A reference to the underlying source of this scanner (this reference may be managed by the garbage collector). */
     BowlValue *string;
+    /** The current state of the UTF-8 decoding. */
+    u32 state;
+    /** The current codepoint in the source. */
+    u32 codepoint;
+    /** The current byte offset in the source. */
     u64 current;
     u64 line;
     u64 column;
