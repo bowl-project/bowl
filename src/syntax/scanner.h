@@ -49,11 +49,13 @@ typedef struct {
     u32 state;
     /** The current codepoint in the source. */
     u32 codepoint;
+    /** The byte offset in the source where the current codepoint starts.  */
+    u64 codepoint_offset;
     /** The current byte offset in the source. */
-    u64 current;
+    u64 offset;
     u64 line;
     u64 column;
-    bool initialized;
+    bool token_available;
     BowlToken token;
 } BowlScanner;
 

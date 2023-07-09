@@ -24,25 +24,25 @@ static const u8 utf8_transitions[] = {
 
 u32 unicode_utf8_decode(u32 *state, u32 *codepoint, u32 byte) {
     const u32 type = utf8_transitions[byte];
-    *codepoint = (*state != UNICODE_UTF8_ACCEPT) ? (byte & 0x3fu) | (*codepoint << 6) : (0xff >> type) & (byte);
+    *codepoint = (*state != UNICODE_UTF8_STATE_ACCEPT) ? (byte & 0x3fu) | (*codepoint << 6) : (0xff >> type) & (byte);
     *state = utf8_transitions[256 + *state + type];
     return *state;
 }
 
 u64 unicode_utf8_count(u8 *bytes, u64 length) {
-    u32 state = UNICODE_UTF8_ACCEPT;
+    u32 state = UNICODE_UTF8_STATE_ACCEPT;
     u32 codepoint;
     u64 result = 0;
 
     for (u64 index = 0; index < length; ++index) {
-        if (unicode_utf8_decode(&state, &codepoint, bytes[index]) == UNICODE_UTF8_ACCEPT) {
+        if (unicode_utf8_decode(&state, &codepoint, bytes[index]) == UNICODE_UTF8_STATE_ACCEPT) {
             ++result;
-        } else if (state == UNICODE_UTF8_REJECT) {
+        } else if (state == UNICODE_UTF8_STATE_ACCEPT) {
             return (u64) -1;
         }
     }
 
-    if (state != UNICODE_UTF8_ACCEPT) {
+    if (state != UNICODE_UTF8_STATE_ACCEPT) {
         return (u64) -2;
     }
 
@@ -78,4 +78,73 @@ bool unicode_is_space(u32 codepoint) {
         default: 
             return false;
     }
+}
+
+static inline u8 unicode_interpret_hex_digit(u32 codepoint) {
+    if (codepoint >= '0' && codepoint <= '9') {
+        return codepoint - '0';
+    } else if (codepoint >= 'a' && codepoint <= 'z') {
+        return codepoint - 'a';
+    } else if (codepoint >= 'A' && codepoint <= 'Z') {
+        return codepoint - 'A';
+    } else {
+        return 0xFF;
+    }
+}
+
+u32 unicode_interpret_escape_sequence(u32 **codepoints, u64 length) {
+    if (length == 0) {
+        return 0;
+    }
+
+    if (**codepoints != '\\') {
+        return **codepoints;
+    }
+
+    if (length == 1) {
+        return UNICODE_REPLACEMENT_CHARACTER;
+    }
+
+    *codepoints = *codepoints + 1;
+
+    if (**codepoints != 'u' && **codepoints != 'U') {
+        const u32 current = **codepoints;
+        *codepoints = *codepoints + 1;
+
+        // ASCII escape sequence
+        switch (current) {
+            case 't': return '\t';
+            case 'f': return '\f';
+            case 'v': return '\v';
+            case 'b': return '\b';
+            case 'r': return '\r';
+            case 'n': return '\n';
+            case 'a': return '\a';
+            default: return current;
+        }
+    }
+
+    // at this point the escape sequence starts with \u or \U
+    // the sequence has to have an even number of digits (i.e., only full bytes can be described) and 
+    // must contain at least one byte (i.e., two hex digits).
+    if (length % 2 != 0 || length < 4) {
+        return UNICODE_REPLACEMENT_CHARACTER;
+    }
+
+    u32 codepoint = 0;
+    for (u64 i = 2; i < MIN(length, 10); i += 2) {
+        const u8 first = unicode_interpret_hex_digit(**codepoints);
+        *codepoints = *codepoints + 1;
+        const u8 second = unicode_interpret_hex_digit(**codepoints);
+        *codepoints = *codepoints + 1;
+
+        if (first == 0xFF || second == 0xFF) {
+            return UNICODE_REPLACEMENT_CHARACTER;
+        }
+
+        codepoint <<= 8; 
+        codepoint |= (((first & 0xF) << 4) | (second & 0xF));
+    }
+
+    return codepoint;
 }

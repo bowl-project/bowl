@@ -660,11 +660,11 @@ void bowl_value_dump(FILE *stream, BowlValue value) {
                 fprintf(stream, "\"");
                 
                 {
-                    u32 state = UNICODE_UTF8_ACCEPT;
+                    u32 state = UNICODE_UTF8_STATE_ACCEPT;
                     u32 codepoint;
 
                     for (u64 i = 0, last = 0, end = value->string.size; i < end; ++i) {
-                        if (unicode_utf8_decode(&state, &codepoint, value->string.bytes[i]) == UNICODE_UTF8_ACCEPT) {
+                        if (unicode_utf8_decode(&state, &codepoint, value->string.bytes[i]) == UNICODE_UTF8_STATE_ACCEPT) {
                             if (codepoint < 0x7F) {
                                 // TODO: handle unicode escape sequences
                                 // handle ascii characters and escape sequences
@@ -678,15 +678,15 @@ void bowl_value_dump(FILE *stream, BowlValue value) {
                                 fwrite(&value->string.bytes[last], i - last + 1, 1, stream); 
                             }
                             last = i;
-                        } else if (state == UNICODE_UTF8_REJECT) {
+                        } else if (state == UNICODE_UTF8_STATE_REJECT) {
                             const u8 replacement_character[2] = { 0xFF, 0xFD };
                             fwrite(&replacement_character[0], sizeof(replacement_character), 1, stream);
-                            state = UNICODE_UTF8_ACCEPT;
+                            state = UNICODE_UTF8_STATE_ACCEPT;
                             last = i;
                         }
                     }
 
-                    if (state != UNICODE_UTF8_ACCEPT) {
+                    if (state != UNICODE_UTF8_STATE_ACCEPT) {
                         const u8 replacement_character[2] = { 0xFF, 0xFD };
                         fwrite(&replacement_character[0], sizeof(replacement_character), 1, stream);
                     }
@@ -891,11 +891,11 @@ static void bowl_value_show_buffer(BowlValue value, char **buffer, u64 *length, 
                 }
 
                  {
-                    u32 state = UNICODE_UTF8_ACCEPT;
+                    u32 state = UNICODE_UTF8_STATE_ACCEPT;
                     u32 codepoint;
 
                     for (u64 i = 0, last = 0, end = value->string.size; i < end; ++i) {
-                        if (unicode_utf8_decode(&state, &codepoint, value->string.bytes[i]) == UNICODE_UTF8_ACCEPT) {
+                        if (unicode_utf8_decode(&state, &codepoint, value->string.bytes[i]) == UNICODE_UTF8_STATE_ACCEPT) {
                             if (codepoint < 0x7F) {
                                 // TODO: handle unicode escape sequences
                                 // handle ascii characters and escape sequences
@@ -918,8 +918,8 @@ static void bowl_value_show_buffer(BowlValue value, char **buffer, u64 *length, 
                             }
 
                             last = i;
-                        } else if (state == UNICODE_UTF8_REJECT) {
-                            state = UNICODE_UTF8_ACCEPT;
+                        } else if (state == UNICODE_UTF8_STATE_ACCEPT) {
+                            state = UNICODE_UTF8_STATE_ACCEPT;
                             last = i;
                             if (!bowl_value_printf_buffer(buffer, length, capacity, "%c%c", 0xFF, 0xFD)) {
                                 return;
@@ -927,7 +927,7 @@ static void bowl_value_show_buffer(BowlValue value, char **buffer, u64 *length, 
                         }
                     }
 
-                    if (state != UNICODE_UTF8_ACCEPT) {
+                    if (state != UNICODE_UTF8_STATE_ACCEPT) {
                         if (!bowl_value_printf_buffer(buffer, length, capacity, "%c%c", 0xFF, 0xFD)) {
                             return;
                         }
@@ -1162,7 +1162,6 @@ BowlResult bowl_list_reverse(BowlStack stack, BowlValue list) {
     return result;
 }
 
-// TODO: Unicode scanner
 BowlResult bowl_tokens(BowlStack stack, BowlValue string) {
     BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, string, NULL, NULL);
     BowlScanner scanner = scanner_from(&frame.registers[0]);
@@ -1184,21 +1183,46 @@ BowlResult bowl_tokens(BowlStack stack, BowlValue string) {
                 break;
 
             case BowlSymbolToken:
-                result = bowl_allocate(&frame, BowlSymbolValue, scanner.token.symbol.length);
+                // This allocates more space as possibly required. However, most symbols consist of ASCII characters, in
+                // which case this approximation is exact. As soon as the garbage runs, all these symbols are truncated
+                // to their real size.
+                result = bowl_allocate(&frame, BowlSymbolValue, scanner.token.symbol.length * sizeof(u32));
                 
                 if (!result.failure) {
-                    result.value->symbol.length = scanner.token.symbol.length;
-                    memcpy(
-                        result.value->symbol.bytes, 
-                        (*scanner.string)->string.bytes + scanner.token.symbol.start, 
-                        scanner.token.symbol.length * sizeof(u8)
-                    );
+                    u32 state = UNICODE_UTF8_STATE_ACCEPT;
+                    u32 codepoint;
+
+                    result.value->symbol.length = 0;
+                    for (u64 i = scanner.token.symbol.start, end = scanner.token.symbol.start + scanner.token.symbol.length; i < end; ++i) {
+                        if (unicode_utf8_decode(&state, &codepoint, (*scanner.string)->string.bytes + i) == UNICODE_UTF8_STATE_ACCEPT) {
+                            result.value->symbol.codepoints[result.value->symbol.length++] = codepoint;
+                        } else if (state == UNICODE_UTF8_STATE_REJECT) {
+                            result.exception = bowl_exception_malformed_utf8;
+                            result.failure = true;
+                            return result;
+                        }
+                    }
+
+                    if (state != UNICODE_UTF8_STATE_ACCEPT) {
+                        result.exception = bowl_exception_incomplete_utf8;
+                        result.failure = true;
+                        return result;
+                    }
                 }
                 break;
 
             case BowlStringToken:
                 result = bowl_allocate(&frame, BowlStringValue, scanner.token.string.length);
+
                 if (!result.failure) {
+                    /*
+                    TODOs:
+                    - Implement this case and test the scanner
+                    - Update all string-to-symbol and symbol-to-string functions (a symbol consists of unicode codepoints)
+                    - Update all functions which use symbols (including hash, equals, print, etc.)
+                    - Improve printing overall
+                    - Check if all utf8 fields for strings are set correctly to 0 at the beginning
+                    */
                     const u64 length = scanner.token.string.length;
                     const u64 start = scanner.token.string.start;
                     u8 *const bytes = &((*scanner.string)->string.bytes[0]);
