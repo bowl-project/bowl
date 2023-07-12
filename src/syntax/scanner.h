@@ -45,21 +45,15 @@ typedef struct {
 typedef struct {
     /** A reference to the underlying source of this scanner (this reference may be managed by the garbage collector). */
     BowlValue *string;
-    /** The current state of the UTF-8 decoding. */
-    u32 state;
-    /** The current codepoint in the source. */
-    u32 codepoint;
-    /** The byte offset in the source where the current codepoint starts.  */
-    u64 codepoint_offset;
-    /** The current byte offset in the source. */
+    /** The current offset in the source. */
     u64 offset;
+    /** The current line number. */
     u64 line;
+    /** The current column number. */
     u64 column;
     bool token_available;
     BowlToken token;
 } BowlScanner;
-
-#define SCANNER_STARTS_WITH_LITERAL(scanner, literal, offset) ((scanner)->current - (offset) == sizeof(literal) - 1 && memcmp((*(scanner)->string)->string.bytes + (offset), (literal), sizeof(literal) - 1) == 0)
 
 BowlScanner scanner_from(BowlValue *string);
 

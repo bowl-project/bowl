@@ -12,7 +12,7 @@ static u64 gc_libraries_capacity = 0;
 static u64 gc_libraries_size = 0;
 
 static inline bool gc_is_managed(BowlValue value) {
-    // only objects that resize inside the 'gc_heap_src' are managed by the garbage collector
+    // only objects that reside inside the 'gc_heap_src' are managed by the garbage collector
     return (u64) value >= (u64) gc_heap_src && (u64) value < (u64) (gc_heap_src + gc_heap_size);
 }
 

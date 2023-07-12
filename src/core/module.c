@@ -38,7 +38,7 @@ void execute(char *program) {
     stack.datastack = &datastack;
     stack.dictionary = &dictionary;
 
-    BowlResult result = bowl_string(&stack, (u8 *) program, strlen(program));
+    BowlResult result = bowl_string_utf8(&stack, program, strlen(program));
 
     if (result.failure) {
         fail(result.exception);
@@ -66,7 +66,7 @@ void execute(char *program) {
 }
 
 BowlValue bowl_module_initialize(BowlStack stack, BowlValue library) {
-    BOWL_STATIC_SYMBOL(run_symbol, "run");
+    BOWL_STATIC_ASCII_SYMBOL(run_symbol, "run");
    
     BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
 
