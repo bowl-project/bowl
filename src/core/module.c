@@ -38,7 +38,7 @@ void execute(char *program) {
     stack.datastack = &datastack;
     stack.dictionary = &dictionary;
 
-    BowlResult result = bowl_string(&stack, (u8 *) program, strlen(program));
+    BowlResult result = bowl_string_utf8(&stack, program, strlen(program));
 
     if (result.failure) {
         fail(result.exception);
@@ -66,7 +66,7 @@ void execute(char *program) {
 }
 
 BowlValue bowl_module_initialize(BowlStack stack, BowlValue library) {
-    BOWL_STATIC_SYMBOL(run_symbol, "run");
+    BOWL_STATIC_ASCII_SYMBOL(run_symbol, "run");
    
     BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
 
@@ -115,8 +115,11 @@ BowlValue bowl_module_initialize(BowlStack stack, BowlValue library) {
     if (run == bowl_sentinel_value) {
         return bowl_format_exception(&frame, "failed to initialize module 'kernel' in function '%s'", __FUNCTION__).value;
     } else {
+        // fetch the function from the entry
+        const BowlFunction fn = run->list.head->function.function;
+
         // bootstrap the first instance 
-        BowlValue exception = run->function.function(&frame);
+        BowlValue exception = fn(&frame);
 
         if (exception != NULL) {
             return exception;

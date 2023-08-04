@@ -2,6 +2,7 @@
 #define SCANNER_H
 
 #include <bowl/api.h>
+#include <bowl/unicode.h>
 
 typedef enum {
     BowlNumberToken,
@@ -42,15 +43,17 @@ typedef struct {
 } BowlToken;
 
 typedef struct {
+    /** A reference to the underlying source of this scanner (this reference may be managed by the garbage collector). */
     BowlValue *string;
-    u64 current;
+    /** The current offset in the source. */
+    u64 offset;
+    /** The current line number. */
     u64 line;
+    /** The current column number. */
     u64 column;
-    bool initialized;
+    bool token_available;
     BowlToken token;
 } BowlScanner;
-
-#define SCANNER_STARTS_WITH_LITERAL(scanner, literal, offset) ((scanner)->current - (offset) == sizeof(literal) - 1 && memcmp((*(scanner)->string)->string.bytes + (offset), (literal), sizeof(literal) - 1) == 0)
 
 BowlScanner scanner_from(BowlValue *string);
 

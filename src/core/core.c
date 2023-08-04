@@ -1,8 +1,18 @@
 #include "core.h"
+/*
+TODOs:
+- Implement this case and test the scanner
+- Update all string-to-symbol and symbol-to-string functions (a symbol consists of unicode codepoints)
+- Update all functions which use symbols (including hash, equals, print, etc.)
+- Improve printing overall
+- Check if all utf8 fields for strings are set correctly to 0 at the beginning
+*/ 
 
-BOWL_STATIC_STRING(bowl_exception_out_of_heap_message, "out of heap memory");
-BOWL_STATIC_STRING(bowl_exception_finalization_failure_message, "finalization failed");
-BOWL_STATIC_STRING(bowl_sentinel_value_internal, "");
+BOWL_STATIC_UNICODE_STRING(bowl_exception_out_of_heap_message, "\0\0\0o\0\0\0u\0\0\0t\0\0\0 \0\0\0o\0\0\0f\0\0\0 \0\0\0h\0\0\0e\0\0\0a\0\0\0p\0\0\0 \0\0\0m\0\0\0e\0\0\0m\0\0\0o\0\0\0r\0\0\0y", 18);
+BOWL_STATIC_UNICODE_STRING(bowl_exception_finalization_failure_message, "\0\0\0f\0\0\0i\0\0\0n\0\0\0a\0\0\0l\0\0\0i\0\0\0z\0\0\0a\0\0\0t\0\0\0i\0\0\0o\0\0\0n\0\0\0 \0\0\0f\0\0\0a\0\0\0i\0\0\0l\0\0\0e\0\0\0d", 19);
+BOWL_STATIC_UNICODE_STRING(bowl_exception_malformed_utf8_message, "\0\0\0m\0\0\0a\0\0\0l\0\0\0f\0\0\0o\0\0\0r\0\0\0m\0\0\0e\0\0\0d\0\0\0 \0\0\0U\0\0\0T\0\0\0F\0\0\0-\0\0\08\0\0\0 \0\0\0s\0\0\0e\0\0\0q\0\0\0u\0\0\0e\0\0\0n\0\0\0c\0\0\0e", 24);
+BOWL_STATIC_UNICODE_STRING(bowl_exception_incomplete_utf8_message, "\0\0\0i\0\0\0n\0\0\0c\0\0\0o\0\0\0m\0\0\0p\0\0\0l\0\0\0e\0\0\0t\0\0\0e\0\0\0 \0\0\0U\0\0\0T\0\0\0F\0\0\0-\0\0\08\0\0\0 \0\0\0s\0\0\0e\0\0\0q\0\0\0u\0\0\0e\0\0\0n\0\0\0c\0\0\0e", 25);
+BOWL_STATIC_UNICODE_STRING(bowl_sentinel_value_internal, "", 0);
 
 static struct bowl_value bowl_exception_out_of_heap_value = {
     .type = BowlExceptionValue,
@@ -24,8 +34,30 @@ static struct bowl_value bowl_exception_finalization_failure_value = {
     }
 };
 
+static struct bowl_value bowl_exception_malformed_utf8_value = {
+    .type = BowlExceptionValue,
+    .location = NULL,
+    .hash = 0,
+    .exception = {
+        .cause = NULL,
+        .message = &bowl_exception_malformed_utf8_message.value
+    }
+};
+
+static struct bowl_value bowl_exception_incomplete_utf8_value = {
+    .type = BowlExceptionValue,
+    .location = NULL,
+    .hash = 0,
+    .exception = {
+        .cause = NULL,
+        .message = &bowl_exception_incomplete_utf8_message.value
+    }
+};
+
 const BowlValue bowl_exception_out_of_heap = &bowl_exception_out_of_heap_value;
 const BowlValue bowl_exception_finalization_failure = &bowl_exception_finalization_failure_value;
+const BowlValue bowl_exception_malformed_utf8 = &bowl_exception_malformed_utf8_value;
+const BowlValue bowl_exception_incomplete_utf8 = &bowl_exception_incomplete_utf8_value;
 const BowlValue bowl_sentinel_value = &bowl_sentinel_value_internal.value;
 
 static BowlResult bowl_map_insert(BowlStack stack, BowlValue bucket, BowlValue key, BowlValue value) {
@@ -93,33 +125,44 @@ static BowlResult bowl_map_insert(BowlStack stack, BowlValue bucket, BowlValue k
     return result;
 }
 
-BowlValue bowl_register_function(BowlStack stack, char *name, BowlValue library, BowlFunction function) {
+BowlValue bowl_register_function(BowlStack stack, char *name, char *documentation, BowlValue library, BowlFunction function) {
     BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
-    BowlResult result;
 
-    result = bowl_symbol(&frame, (u8*) name, strlen(name));
+    BOWL_TRY(&frame.registers[1], bowl_string_utf8(&frame, documentation, strlen(documentation)));
+    BOWL_TRY(&frame.registers[1], bowl_list(&frame, frame.registers[1], NULL));
+    BOWL_TRY(&frame.registers[2], bowl_function(&frame, frame.registers[0], function));
+    BOWL_TRY(&frame.registers[1], bowl_list(&frame, frame.registers[2], frame.registers[1]));
 
-    if (result.failure) {
-        return result.exception;
+    u32 *const unicode_name = unicode_from_string(name);
+    if (unicode_name == NULL) {
+        return bowl_exception_out_of_heap;
     }
+    BOWL_TRY(&frame.registers[2], bowl_symbol(&frame, unicode_name, strlen(name)));
+    free(unicode_name);
 
-    frame.registers[1] = result.value;
-    result = bowl_function(&frame, frame.registers[0], function);
-
-    if (result.failure) {
-        return result.exception;
-    }
-
-    result = bowl_map_put(&frame, *frame.dictionary, frame.registers[1], result.value);
-
-    if (result.failure) {
-        return result.exception;
-    }
-
-    *frame.dictionary = result.value;
+    BOWL_TRY(frame.dictionary, bowl_map_put(&frame, *frame.dictionary, frame.registers[2], frame.registers[1]));
 
     return NULL;
 }
+
+BowlValue bowl_register(BowlStack stack, BowlValue library, BowlFunctionEntry entry) {
+    BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
+    return bowl_register_function(&frame, entry.name, entry.documentation, frame.registers[0], entry.function);
+}
+
+BowlValue bowl_register_all(BowlStack stack, BowlValue library, BowlFunctionEntry entries[], u64 entries_length) {
+    BowlStackFrame frame = BOWL_ALLOCATE_STACK_FRAME(stack, library, NULL, NULL);
+    
+    for (u64 i = 0; i < entries_length; ++i) {
+        const BowlValue exception = bowl_register(&frame, frame.registers[0], entries[i]);
+        if (exception != NULL) {
+            return exception;
+        }
+    }
+
+    return NULL;
+}
+
 
 BowlValue bowl_map_get_or_else(BowlValue map, BowlValue key, BowlValue otherwise) {
     const u64 index = bowl_value_hash(key) % map->map.capacity;
@@ -353,7 +396,7 @@ u64 bowl_value_hash(BowlValue value) {
         switch (value->type) {
             case BowlSymbolValue:
                 for (u64 i = 0, end = value->symbol.length; i < end; ++i) {
-                    value->hash += pow(value->symbol.bytes[i] * 31, end - (i + 1));
+                    value->hash += pow(value->symbol.codepoints[i] * 31, end - (i + 1));
                 }
                 break;
 
@@ -367,7 +410,7 @@ u64 bowl_value_hash(BowlValue value) {
 
             case BowlStringValue:
                 for (u64 i = 0, end = value->string.length; i < end; ++i) {
-                    value->hash += pow(value->string.bytes[i] * 31, end - (i + 1));
+                    value->hash += pow(value->string.codepoints[i] * 31, end - (i + 1));
                 }
                 break;
 
@@ -423,7 +466,7 @@ bool bowl_value_equals(BowlValue a, BowlValue b) {
                 }
 
                 for (u64 i = 0, end = a->symbol.length; i < end; ++i) {
-                    if (a->symbol.bytes[i] != b->symbol.bytes[i]) {
+                    if (a->symbol.codepoints[i] != b->symbol.codepoints[i]) {
                         return false;
                     }
                 }
@@ -442,7 +485,7 @@ bool bowl_value_equals(BowlValue a, BowlValue b) {
                 }
 
                 for (u64 i = 0, end = a->string.length; i < end; ++i) {
-                    if (a->string.bytes[i] != b->string.bytes[i]) {
+                    if (a->string.codepoints[i] != b->string.codepoints[i]) {
                         return false;
                     }
                 }
@@ -533,9 +576,9 @@ u64 bowl_value_byte_size(BowlValue value) {
     } else {
         switch (value->type) {
             case BowlSymbolValue:
-                return sizeof(struct bowl_value) + value->symbol.length * sizeof(u8);
+                return sizeof(struct bowl_value) + value->symbol.length * sizeof(u32);
             case BowlStringValue:
-                return sizeof(struct bowl_value) + value->string.length * sizeof(u8);
+                return sizeof(struct bowl_value) + value->string.length * sizeof(u32);
             case BowlLibraryValue:
                 return sizeof(struct bowl_value) + value->library.length * sizeof(u8);
             case BowlMapValue:
@@ -571,7 +614,10 @@ void bowl_value_dump(FILE *stream, BowlValue value) {
         switch (value->type) {
             case BowlSymbolValue:
                 for (u64 i = 0, end = value->symbol.length; i < end; ++i) {
-                    fprintf(stream, "%c", value->symbol.bytes[i]);
+                    u8 bytes[4];
+                    u64 written = unicode_utf8_encode(value->symbol.codepoints[i], &bytes[0]);
+                    if (written == 0) written = 3; // unicode replacement character was written
+                    fwrite(&bytes[0], sizeof(u8), written, stream);
                 }
                 break;
 
@@ -628,18 +674,19 @@ void bowl_value_dump(FILE *stream, BowlValue value) {
                 break;
 
             case BowlStringValue:
-                fprintf(stream, "\"");
-
-                for (u64 i = 0, end = value->string.length; i < end; ++i) {
-                    char const* sequence = escape(value->string.bytes[i]);
-                    if (sequence != NULL) {
-                        fprintf(stream, "%s", sequence);
-                    } else {
-                        fprintf(stream, "%c", value->string.bytes[i]);
+                fwrite("\"", sizeof(char), 1, stream);
+                
+                // TODO: ASCII escape sequences
+                {
+                    for (u64 i = 0, end = value->string.length; i < end; ++i) {
+                        u8 bytes[4];
+                        u64 written = unicode_utf8_encode(value->string.codepoints[i], &bytes[0]);
+                        if (written == 0) written = 3; // unicode replacement character was written
+                        fwrite(&bytes[0], sizeof(u8), written, stream);
                     }
                 }
 
-                fprintf(stream, "\"");
+                fwrite("\"", sizeof(char), 1, stream);
                 break;
 
             case BowlMapValue:
@@ -734,8 +781,13 @@ static void bowl_value_show_buffer(BowlValue value, char **buffer, u64 *length, 
         switch (value->type) {
             case BowlSymbolValue:
                 for (u64 i = 0, end = value->symbol.length; i < end; ++i) {
-                    if (!bowl_value_printf_buffer(buffer, length, capacity, "%c", value->symbol.bytes[i])) {
-                        return;
+                    u8 bytes[4];
+                    u64 written = unicode_utf8_encode(value->symbol.codepoints[i], &bytes[0]);
+                    if (written == 0) written = 3; // unicode replacement character was written
+                    for (u64 j = 0; j < written; ++j) {
+                        if (!bowl_value_printf_buffer(buffer, length, capacity, "%c", bytes[j])) {
+                            return;
+                        }
                     }
                 }
                 break;
@@ -837,15 +889,15 @@ static void bowl_value_show_buffer(BowlValue value, char **buffer, u64 *length, 
                     return;
                 }
 
-                for (u64 i = 0, end = value->string.length; i < end; ++i) {
-                    char const* sequence = escape(value->string.bytes[i]);
-                    if (sequence != NULL) {
-                        if (!bowl_value_printf_buffer(buffer, length, capacity, "%s", sequence)) {
-                            return;
-                        }
-                    } else {
-                        if (!bowl_value_printf_buffer(buffer, length, capacity, "%c", value->string.bytes[i])) {
-                            return;
+                {
+                    for (u64 i = 0, end = value->string.length; i < end; ++i) {
+                        u8 bytes[4];
+                        u64 written = unicode_utf8_encode(value->string.codepoints[i], &bytes[0]);
+                        if (written == 0) written = 3; // unicode replacement character was written
+                        for (u64 j = 0; j < written; ++j) {
+                            if (!bowl_value_printf_buffer(buffer, length, capacity, "%c", bytes[j])) {
+                                return;
+                            }
                         }
                     }
                 }
@@ -970,48 +1022,54 @@ char *bowl_value_type(BowlValue value) {
     return bowl_type_name(value == NULL ? BowlListValue : value->type);
 }
 
-char *bowl_string_to_null_terminated(BowlValue value) {
-    char *path = malloc(value->string.length + 1);
-    
-    if (path != NULL) {
-        memcpy(path, value->string.bytes, value->string.length);
-        path[value->string.length] = '\0';    
-    }
-
-    return path;
-}
-
 BowlResult bowl_format_exception(BowlStack stack, char *message, ...) {
-    BOWL_STATIC_STRING(exception_message, "failed to format exception message in function 'bowl_format_exception'");
-    struct bowl_value exception = {
+    BOWL_STATIC_ASCII_STRING(format_exception_message, "failed to format exception message in function 'bowl_format_exception'");
+    static struct bowl_value format_exception = {
         .type = BowlExceptionValue,
         .location = NULL,
         .hash = 0,
         .exception = {
             .cause = NULL,
-            .message = &exception_message.value
+            .message = &format_exception_message.value
         }
     };
+
     va_list list;
 
     va_start(list, message);
     const u64 required = vsnprintf(NULL, 0, message, list);
     va_end(list);
 
-    BowlResult result = gc_allocate(stack, BowlStringValue, (required + 1) * sizeof(u8));
+    BowlResult result;
+    u8 *const buffer = malloc((required + 1) * sizeof(u8));
+    if (buffer == NULL) {
+        result.failure = true;
+        result.exception = bowl_exception_out_of_heap;
+        return result;
+    }
 
     if (!result.failure) {
-        result.value->string.length = required;
         va_start(list, message);
-        const u64 written = vsnprintf(&result.value->string.bytes[0], required + 1, message, list);
+        const u64 written = vsnprintf(&buffer[0], required + 1, message, list);
         va_end(list);
 
         if (written < 0 || written >= required + 1) {
-            result.value = &exception;
-            result.failure = false;
+            result.exception = &format_exception;
+            result.failure = true;
+            return result;
         }
 
-        result = bowl_exception(stack, NULL, result.value);
+        result = gc_allocate(stack, BowlStringValue, written * sizeof(u32));
+
+        if (!result.failure) {
+            result.value->string.length = written;
+            
+            for (u64 i = 0; i < written; ++i) {
+                result.value->string.codepoints[i] = (u32) buffer[i];
+            }
+
+            result = bowl_exception(stack, NULL, result.value);
+        }
     }
 
     return result;
@@ -1083,42 +1141,28 @@ BowlResult bowl_tokens(BowlStack stack, BowlValue string) {
                 break;
 
             case BowlSymbolToken:
-                result = bowl_allocate(&frame, BowlSymbolValue, scanner.token.symbol.length);
+                result = bowl_allocate(&frame, BowlSymbolValue, scanner.token.symbol.length * sizeof(u32));
                 
                 if (!result.failure) {
                     result.value->symbol.length = scanner.token.symbol.length;
-                    memcpy(
-                        result.value->symbol.bytes, 
-                        (*scanner.string)->string.bytes + scanner.token.symbol.start, 
-                        scanner.token.symbol.length * sizeof(u8)
-                    );
+                    memcpy(&result.value->symbol.codepoints[0], &(*scanner.string)->string.codepoints[scanner.token.symbol.start], scanner.token.symbol.length * sizeof(u32));
                 }
+
                 break;
 
-            case BowlStringToken:
-                result = bowl_allocate(&frame, BowlStringValue, scanner.token.string.length);
+            case BowlStringToken: 
+                result = bowl_allocate(&frame, BowlStringValue, scanner.token.string.length * sizeof(u32));
 
                 if (!result.failure) {
-                    const u64 length = scanner.token.string.length;
-                    const u64 start = scanner.token.string.start;
-                    u8 *const bytes = &((*scanner.string)->string.bytes[0]);
-                    u8 *const dst = &result.value->string.bytes[0];
-
-                    register bool escaped = false;
-                    register u64 p = 0;
-                    for (register u64 i = 0; i < length; ++i) {
-                        const char current = bytes[start + i];
-                        if (escaped) {
-                            escaped = false;
-                            dst[p++] = unescape(current);
-                        } else if (current == '\\') {
-                            escaped = true;
-                        } else {
-                            dst[p++] = current;
-                        }
+                    
+                    u64 j = 0;
+                    for (u64 i = 0; i < scanner.token.string.length;) {
+                        u32 codepoint;
+                        i += unicode_escape_sequence(&(*scanner.string)->string.codepoints[scanner.token.string.start + i], scanner.token.string.length - i, &codepoint);
+                        result.value->string.codepoints[j++] = codepoint;
                     }
 
-                    result.value->string.length = p;
+                    result.value->string.length = j;
                 }
 
                 break;
@@ -1140,24 +1184,86 @@ BowlResult bowl_tokens(BowlStack stack, BowlValue string) {
     return bowl_list_reverse(&frame, frame.registers[1]);
 }
 
-BowlResult bowl_symbol(BowlStack stack, u8 *bytes, u64 length) {
-    BowlResult result = gc_allocate(stack, BowlSymbolValue, length * sizeof(u8));
+BowlResult bowl_symbol(BowlStack stack, u32 *codepoints, u64 length) {
+    BowlResult result = gc_allocate(stack, BowlSymbolValue, length * sizeof(u32));
 
     if (!result.failure) {
         result.value->symbol.length = length;
-        memcpy(result.value->symbol.bytes, bytes, length * sizeof(u8));
+        memcpy(&result.value->symbol.codepoints[0], codepoints, length * sizeof(u32));
         bowl_value_hash(result.value);    
     }
 
     return result;
 }
 
-BowlResult bowl_string(BowlStack stack, u8 *bytes, u64 length) {
-    BowlResult result = gc_allocate(stack, BowlStringValue, length * sizeof(u8));
+BowlResult bowl_symbol_utf8(BowlStack stack, u8 *bytes, u64 length) {
+    // the heap waste is removed by the next gc run
+    BowlResult result = gc_allocate(stack, BowlSymbolValue, length * sizeof(u32));
+
+    if (!result.failure) {
+        u32 state = UNICODE_UTF8_STATE_ACCEPT;
+        u32 codepoint = 0;
+
+        u64 p = 0;
+        for (u64 i = 0; i < length; ++i) {
+            if (unicode_utf8_decode(&state, &codepoint, bytes[i]) == UNICODE_UTF8_STATE_ACCEPT) {
+                result.value->symbol.codepoints[p++] = codepoint;
+            } else if (state == UNICODE_UTF8_STATE_REJECT) {
+                result.failure = true;
+                result.value = bowl_exception_malformed_utf8;
+                return result;
+            }
+        }
+
+        if (state != UNICODE_UTF8_STATE_ACCEPT) {
+            result.failure = true;
+            result.value = bowl_exception_incomplete_utf8;
+            return result;
+        }
+
+        result.value->symbol.length = p;
+    }
+
+    return result;
+}
+
+BowlResult bowl_string(BowlStack stack, u32 *codepoints, u64 length) {
+    BowlResult result = gc_allocate(stack, BowlStringValue, length * sizeof(u32));
 
     if (!result.failure) {
         result.value->string.length = length;
-        memcpy(result.value->string.bytes, bytes, length * sizeof(u8));
+        memcpy(&result.value->string.codepoints[0], &codepoints[0], length * sizeof(u32));
+    }
+
+    return result;
+}
+
+BowlResult bowl_string_utf8(BowlStack stack, u8 *bytes, u64 length) {
+    // the heap waste is removed by the next gc run
+    BowlResult result = gc_allocate(stack, BowlStringValue, length * sizeof(u32));
+
+    if (!result.failure) {
+        u32 state = UNICODE_UTF8_STATE_ACCEPT;
+        u32 codepoint = 0;
+
+        u64 p = 0;
+        for (u64 i = 0; i < length; ++i) {
+            if (unicode_utf8_decode(&state, &codepoint, bytes[i]) == UNICODE_UTF8_STATE_ACCEPT) {
+                result.value->string.codepoints[p++] = codepoint;
+            } else if (state == UNICODE_UTF8_STATE_REJECT) {
+                result.failure = true;
+                result.value = bowl_exception_malformed_utf8;
+                return result;
+            }
+        }
+
+        if (state != UNICODE_UTF8_STATE_ACCEPT) {
+            result.failure = true;
+            result.value = bowl_exception_incomplete_utf8;
+            return result;
+        }
+
+        result.value->string.length = p;
     }
 
     return result;
